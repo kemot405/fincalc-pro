@@ -20,4 +20,4 @@ This starter contains:
 - Tailwind config and basic styles in `styles/globals.css`
 
 Logo is in `public/logo.svg`.
-
+update deploy
