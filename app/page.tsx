@@ -36,7 +36,7 @@ export default function HomePage() {
         </h2>
         <p className="text-gray-300 mb-8 max-w-xl">
           Profesjonalne kalkulatory inwestycyjne, praktyczne kursy i centrum
-          wiedzy dla każdego, kto chce inwestować mądrzej.
+          wiedzy dla każdego, kto chce inwestować mądrze
         </p>
 
         {/* 🔥 USUNIĘTE PRZYCISKI */}
@@ -100,13 +100,13 @@ export default function HomePage() {
             },
             {
               title: "Zaawansowany kalkulator do porównywania kilku inwestycji",
-              link: "/kalkulatory/roi-npv",
+              link: "/kalkulatory/porownanie-inwestycji",
               desc: "Porównuj i analizuj kilka inwestycji zanim wydasz pieniądze.",
             },
             {
               title:
-                "Model do optymalizowania stopy zwrotu przy zastosowaniu finansowania kapitałem obcym",
-              link: "/kalkulatory/kredyt-hipoteczny",
+                "Model optymalizacji stopy zwrotu przy różnym udziale finansowania kapitałem obcym",
+              link: "/kalkulatory/optymalizacja-kapital-obcy",
               desc: "Sprawdź, przy jakim udziale kapitału obcego inwestycja daje największy zysk.",
             },
           ].map((item, idx) => (
