@@ -1,0 +1,27 @@
+{
+  "key": "real_estate_growth_forecast_pl",
+  "name": "Prognoza zmiany wartości nieruchomości Polska",
+  "unit": "%",
+  "data": [
+    { "year": 2026, "value": 2.0 },
+    { "year": 2027, "value": 3.0 },
+    { "year": 2028, "value": 3.5 },
+    { "year": 2029, "value": 4.0 },
+    { "year": 2030, "value": 4.0 },
+    { "year": 2031, "value": 4.0 },
+    { "year": 2032, "value": 4.0 },
+    { "year": 2033, "value": 4.0 },
+    { "year": 2034, "value": 4.0 },
+    { "year": 2035, "value": 4.0 },
+    { "year": 2036, "value": 4.0 },
+    { "year": 2037, "value": 4.0 },
+    { "year": 2038, "value": 4.0 },
+    { "year": 2039, "value": 4.0 },
+    { "year": 2040, "value": 4.0 },
+    { "year": 2041, "value": 4.0 },
+    { "year": 2042, "value": 4.0 },
+    { "year": 2043, "value": 4.0 },
+    { "year": 2044, "value": 4.0 },
+    { "year": 2045, "value": 4.0 }
+  ]
+}

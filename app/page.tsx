@@ -1,30 +1,6 @@
 import React from "react";
 import Link from "next/link";
 
-// Uniwersalny przycisk
-function Button({
-  children,
-  className,
-  variant,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  variant?: string;
-}) {
-  if (variant === "outline") {
-    return (
-      <button className={`px-4 py-2 rounded border transition ${className}`}>
-        {children}
-      </button>
-    );
-  }
-  return (
-    <button className={`px-4 py-2 rounded transition ${className}`}>
-      {children}
-    </button>
-  );
-}
-
 export default function HomePage() {
   return (
     <div className="min-h-screen flex flex-col bg-gray-800 text-white font-sans">
@@ -38,17 +14,15 @@ export default function HomePage() {
           Profesjonalne kalkulatory inwestycyjne, praktyczne kursy i centrum
           wiedzy dla każdego, kto chce inwestować mądrze
         </p>
-
-        {/* 🔥 USUNIĘTE PRZYCISKI */}
       </section>
 
-      {/* 🔹 SEKCJA: Szybkie narzędzia / Nauka / Centrum wiedzy */}
+      {/* 🔹 SEKCJA: NAWIGACYJNA */}
       <section className="px-6 md:px-12 -mt-10 bg-gray-900 py-12">
         <div className="rounded-2xl border border-green-400/60 p-6 md:p-8">
           <div className="grid md:grid-cols-3 gap-6">
             {[
               {
-                title: "Szybkie narzędzia",
+                title: "Kalkulatory inwestycyjne",
                 link: "/kalkulatory",
                 desc: "Uruchom nasze najpopularniejsze kalkulatory w kilku kliknięciach.",
               },
@@ -63,24 +37,19 @@ export default function HomePage() {
                 desc: "Artykuły, case study i przykłady wykorzystania kalkulatorów w realnych analizach.",
               },
             ].map((item, idx) => (
-              <div
+              <Link
                 key={idx}
-                className="rounded-2xl p-6 shadow-md"
-                style={{
-                  background: "rgba(168,203,176,0.14)",
-                  border: "1px solid #3f7a59",
-                }}
+                href={item.link}
+                className="block rounded-2xl p-6 shadow-md transition duration-300 bg-green-900/20 border border-[#3f7a59] hover:bg-green-800/30 hover:border-green-300"
               >
-                <Link href={item.link}>
-                  <h3
-                    className="text-xl font-semibold mb-2 hover:text-orange-400 transition cursor-pointer"
-                    style={{ color: "#a8cbb0" }}
-                  >
-                    {item.title}
-                  </h3>
-                </Link>
+                <h3
+                  className="text-xl font-semibold mb-2"
+                  style={{ color: "#a8cbb0" }}
+                >
+                  {item.title}
+                </h3>
                 <p className="text-gray-200">{item.desc}</p>
-              </div>
+              </Link>
             ))}
           </div>
         </div>
@@ -91,38 +60,65 @@ export default function HomePage() {
         <h3 className="text-3xl font-semibold text-green-200 mb-8 text-center">
           Kalkulatory
         </h3>
-        <div className="grid md:grid-cols-3 gap-6">
+
+        <div className="grid md:grid-cols-3 gap-6 items-stretch">
           {[
             {
-              title: "Prognozowanie stopy zwrotu z inwestycji w wynajem",
+              title: "Analiza stopy zwrotu z inwestycji w najem",
               link: "/kalkulatory/zwrot-inwestycji",
-              desc: "Oblicz realny zwrot z wynajmu, uwzględniając koszty zakupu, remontu i przychody miesięczne.",
+              desc: "Policz NPV, IRR, MIRR, ROI, okres zwrotu i porównaj wynik inwestycji z inflacją.",
+              cta: "Uruchom",
+              special: false,
             },
             {
               title: "Zaawansowany kalkulator do porównywania kilku inwestycji",
               link: "/kalkulatory/porownanie-inwestycji",
               desc: "Porównuj i analizuj kilka inwestycji zanim wydasz pieniądze.",
+              cta: "Uruchom",
+              special: false,
             },
             {
-              title:
-                "Model optymalizacji stopy zwrotu przy różnym udziale finansowania kapitałem obcym",
-              link: "/kalkulatory/optymalizacja-kapital-obcy",
-              desc: "Sprawdź, przy jakim udziale kapitału obcego inwestycja daje największy zysk.",
+              title: "Zobacz wszystkie kalkulatory",
+              link: "/kalkulatory",
+              desc: "Przejdź do pełnej listy narzędzi inwestycyjnych i wybierz kalkulator dopasowany do swojej analizy.",
+              cta: ">> Przeglądaj wszystkie kalkulatory",
+              special: true,
             },
           ].map((item, idx) => (
             <div
               key={idx}
-              className="bg-green-900/20 border border-green-400 rounded-2xl p-4 hover:bg-green-800/30 transition"
+              className={
+                item.special
+                  ? "bg-green-900/20 border border-yellow-600 rounded-2xl p-6 hover:bg-green-800/30 hover:border-yellow-500 transition flex flex-col h-full"
+                  : "bg-green-900/20 border border-green-400 rounded-2xl p-6 hover:bg-green-800/30 transition flex flex-col h-full"
+              }
             >
-              <h4 className="text-lg font-semibold mb-2 text-white">
+              <h4
+                className="text-lg font-semibold mb-2"
+                style={{
+                  color: item.special ? "#8eac96" : "#a8cbb0",
+                }}
+              >
                 {item.title}
               </h4>
-              <p className="text-gray-300 mb-3 text-sm">{item.desc}</p>
-              <Link href={item.link}>
-                <Button className="bg-orange-500 hover:bg-orange-600 text-white w-full text-sm py-2">
-                  Uruchom
-                </Button>
-              </Link>
+
+              <p className="text-gray-300 mb-4 text-sm line-clamp-2">
+                {item.desc}
+              </p>
+
+              <div className="mt-auto">
+                <Link href={item.link}>
+                  <span
+                    className={
+                      item.special
+                        ? "font-semibold cursor-pointer transition text-red-400 hover:text-red-300"
+                        : "text-orange-400 hover:text-orange-300 font-semibold cursor-pointer transition"
+                    }
+                  >
+                    {item.cta} →
+                  </span>
+                </Link>
+              </div>
             </div>
           ))}
         </div>
@@ -133,6 +129,7 @@ export default function HomePage() {
         <h3 className="text-3xl font-semibold text-green-200 mb-8 text-center">
           Kursy
         </h3>
+
         <div className="grid md:grid-cols-3 gap-6">
           {[
             {
@@ -153,17 +150,19 @@ export default function HomePage() {
           ].map((item, idx) => (
             <div
               key={idx}
-              className="bg-green-900/20 border border-green-400 rounded-2xl p-6 hover:bg-green-800/30 transition"
+              className="bg-green-900/20 border border-green-400 rounded-2xl p-6 hover:bg-green-800/30 transition flex flex-col h-full"
             >
               <h4 className="text-xl font-semibold mb-3 text-green-100">
                 {item.title}
               </h4>
               <p className="text-gray-300 mb-4">{item.desc}</p>
-              <Link href={item.link}>
-                <Button className="bg-orange-500 hover:bg-orange-600 text-white w-full">
-                  Przejdź do kursu
-                </Button>
-              </Link>
+              <div className="mt-auto">
+                <Link href={item.link}>
+                  <span className="text-orange-400 hover:text-orange-300 font-semibold cursor-pointer transition">
+                    Przejdź do kursu →
+                  </span>
+                </Link>
+              </div>
             </div>
           ))}
         </div>
@@ -174,6 +173,7 @@ export default function HomePage() {
         <h3 className="text-3xl font-semibold text-green-200 mb-8 text-center">
           Centrum Wiedzy
         </h3>
+
         <div className="grid md:grid-cols-3 gap-6">
           {[
             {
@@ -194,34 +194,41 @@ export default function HomePage() {
           ].map((item, idx) => (
             <div
               key={idx}
-              className="bg-green-900/20 border border-green-400 rounded-2xl p-6 hover:bg-green-800/30 transition"
+              className="bg-green-900/20 border border-green-400 rounded-2xl p-6 hover:bg-green-800/30 transition flex flex-col h-full"
             >
               <h4 className="text-xl font-semibold mb-3 text-green-100">
                 {item.title}
               </h4>
               <p className="text-gray-300 mb-4">{item.desc}</p>
-              <Link href={item.link}>
-                <span className="text-orange-400 hover:text-orange-300 font-medium cursor-pointer transition">
-                  Czytaj więcej →
-                </span>
-              </Link>
+              <div className="mt-auto">
+                <Link href={item.link}>
+                  <span className="text-orange-400 hover:text-orange-300 font-medium cursor-pointer transition">
+                    Czytaj więcej →
+                  </span>
+                </Link>
+              </div>
             </div>
           ))}
         </div>
       </section>
 
-      {/* CTA – ZMIENIONE WG TWOJEJ PROŚBY */}
+      {/* CTA */}
       <section className="py-16 text-center bg-gradient-to-t from-brown-800 to-gray-900 border-t border-yellow-500">
-
-        {/* 🔥 NOWY TEKST — DUŻA CZCIONKA I TEN SAM KOLOR CO „ZYSKAJ DOŻYWOTNI DOSTĘP” */}
         <h3 className="text-3xl font-semibold text-green-200 mb-6">
-          Otrzymaj pełny dostęp do wszystkich kalkulatorów, kursów i materiałów FinCalc Pro
+          Otrzymaj pełny dostęp do wszystkich kalkulatorów, kursów i materiałów
+          FinCalc Pro
         </h3>
 
-        {/* 🔥 NOWY PRZYCISK */}
-        <Button className="bg-orange-500 hover:bg-orange-600 text-white text-lg px-8 py-4 rounded-xl">
-          Kup pełny dostęp
-        </Button>
+        <div className="flex justify-center">
+          <Link
+            href="/system-transakcyjny"
+            className="block rounded-2xl px-5 py-3 shadow-md transition duration-300 bg-green-900/20 border border-[#3f7a59] hover:bg-green-800/30 hover:border-green-300 w-full max-w-sm"
+          >
+            <span className="block text-white text-lg md:text-xl font-semibold text-center">
+              Kup pełny dostęp
+            </span>
+          </Link>
+        </div>
       </section>
 
       {/* Footer */}
@@ -231,6 +238,7 @@ export default function HomePage() {
             © {new Date().getFullYear()} FinCalc Pro. Wszelkie prawa
             zastrzeżone.
           </p>
+
           <div className="space-x-4">
             <a href="#" className="hover:text-yellow-400">
               Polityka prywatności

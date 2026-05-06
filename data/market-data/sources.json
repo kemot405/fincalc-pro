@@ -1,0 +1,23 @@
+[
+  {
+    "key": "inflation_pl",
+    "name": "Inflacja CPI Polska",
+    "url": "https://stat.gov.pl/",
+    "description": "Dane historyczne inflacji CPI dla Polski wykorzystywane do obliczeń realnej wartości pieniądza.",
+    "lastUpdated": "2025-01-01"
+  },
+  {
+    "key": "bonds_10y_pl",
+    "name": "Obligacje skarbowe 10-letnie Polska",
+    "url": "https://www.gov.pl/web/finanse",
+    "description": "Rentowność obligacji wykorzystywana jako przybliżenie stopy wolnej od ryzyka.",
+    "lastUpdated": "2025-01-01"
+  },
+  {
+    "key": "real_estate_growth_pl",
+    "name": "Średnia roczna zmiana wartości nieruchomości Polska",
+    "url": "https://nbp.pl/",
+    "description": "Dane historyczne służące do budowy scenariuszy zmiany wartości nieruchomości.",
+    "lastUpdated": "2025-01-01"
+  }
+]

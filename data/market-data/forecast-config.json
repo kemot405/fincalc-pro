@@ -1,0 +1,17 @@
+{
+  "inflation": {
+    "low": 3,
+    "base": 4,
+    "high": 5
+  },
+  "riskFreeRate": {
+    "low": 4.5,
+    "base": 5,
+    "high": 5.5
+  },
+  "realEstateGrowth": {
+    "low": 3,
+    "base": 4.5,
+    "high": 6
+  }
+}

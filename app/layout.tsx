@@ -59,7 +59,7 @@ export default function RootLayout({
               href="/"
               className="text-2xl font-bold text-yellow-400 hover:text-yellow-300 transition"
             >
-              FinCalc <span className="text-orange-400/90">Pro</span>
+              FinCalc <span style={{ color: "#d98947" }}>Pro</span>
             </Link>
           </div>
 
