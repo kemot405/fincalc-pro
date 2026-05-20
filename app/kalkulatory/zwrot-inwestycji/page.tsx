@@ -6,6 +6,8 @@ import { motion } from "framer-motion";
 import {
   LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -61,12 +63,6 @@ type DefaultsResponse = {
   };
 };
 
-type ForecastResponse = {
-  metric: string;
-  scenario: string;
-  data: { year: number; value: number }[];
-};
-
 type YearlyRow = {
   year: number;
   revenue: number;
@@ -83,14 +79,22 @@ type YearlyRow = {
   propertyValue: number;
   totalInvestmentValue: number;
   propertyGrowthApplied: number;
+  propertyGain: number;
+  reinvestedAmount: number;
+  reinvestedAmountCumulative: number;
+  reinvestmentGainCumulative: number;
+  totalGainCumulative: number;
+  totalGainReturnPercent: number;
+  rentReturnPercent: number;
+  cumulativeInflationPercent: number;
 };
 
 type KpiData = {
-  npv: string;
-  irr: string;
-  mirr: string;
-  roi: string;
-  pb: string;
+  rentIncomeFinal: string;
+  rentIncomeReturn: string;
+  totalInvestmentGain: string;
+  riskFreeGain: string;
+  payback: string;
   returnVsInflation: string;
 };
 
@@ -138,6 +142,7 @@ function calculateMIRR(
   reinvestedShare: number
 ): number | null {
   const n = cashflows.length - 1;
+
   if (n <= 0) return null;
 
   let pvNegative = 0;
@@ -151,6 +156,7 @@ function calculateMIRR(
     } else if (cf > 0) {
       const reinvestedPart = cf * reinvestedShare;
       const nonReinvestedPart = cf * (1 - reinvestedShare);
+
       fvPositive += reinvestedPart * Math.pow(1 + reinvestRate, n - t);
       fvPositive += nonReinvestedPart;
     }
@@ -175,15 +181,18 @@ function formatPercent(value: number, digits = 2): string {
 
 function parseLocalizedNumber(value: string): number | null {
   const cleaned = value.replace(/\s/g, "").replace(",", ".");
+
   if (cleaned === "" || cleaned === "-" || cleaned === "." || cleaned === "-.") {
     return null;
   }
+
   const parsed = Number(cleaned);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
 function formatLocalizedNumber(value: number): string {
   const hasDecimals = !Number.isInteger(value);
+
   return new Intl.NumberFormat("pl-PL", {
     minimumFractionDigits: 0,
     maximumFractionDigits: hasDecimals ? 2 : 0,
@@ -206,6 +215,7 @@ function InfoHint({ text }: { text: string }) {
     }
 
     document.addEventListener("mousedown", handleClickOutside);
+
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
@@ -245,6 +255,7 @@ function DefaultSourceHint() {
     }
 
     document.addEventListener("mousedown", handleClickOutside);
+
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
@@ -275,7 +286,8 @@ function DefaultSourceHint() {
 
       {open && (
         <div className="absolute right-0 top-7 z-30 w-80 rounded-xl border border-green-700/30 bg-[#cfe8c9] px-4 py-3 text-left text-sm text-black shadow-xl leading-relaxed">
-          Wartość domyślna przyjęta do modelu na podstawie danych NBP / prognozy rynkowej zapisanej w bazie strony.
+          Wartość domyślna przyjęta do modelu na podstawie danych NBP / prognozy
+          rynkowej zapisanej w bazie strony.
         </div>
       )}
     </span>
@@ -296,6 +308,7 @@ function KpiBox({
       <div className="absolute right-3 top-3">
         <InfoHint text={hint} />
       </div>
+
       <span className="text-sm text-gray-300 pr-8">{label}</span>
       <span className="text-2xl font-bold text-yellow-400">{value}</span>
     </div>
@@ -303,6 +316,8 @@ function KpiBox({
 }
 
 export default function ZwrotInwestycji() {
+  const reportRef = useRef<HTMLDivElement | null>(null);
+
   const [inputs, setInputs] = useState<InvestmentInputs>({
     investmentValue: 500000,
     riskFreeRate: 5,
@@ -328,9 +343,8 @@ export default function ZwrotInwestycji() {
   const [inflationAvg, setInflationAvg] = useState<number>(4);
   const [rows, setRows] = useState<YearlyRow[]>([]);
   const [kpis, setKpis] = useState<KpiData | null>(null);
-  const [propertyForecast, setPropertyForecast] = useState<
-    { year: number; value: number }[]
-  >([]);
+  const [validationMessage, setValidationMessage] = useState("");
+  const [firstViewMode, setFirstViewMode] = useState<"chart" | "table">("chart");
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -344,11 +358,6 @@ export default function ZwrotInwestycji() {
         const growth = json.realEstateGrowth?.avg10y ?? 4.5;
         const tax = json.tax?.default ?? 8.5;
         const inflation = json.inflation?.avg10y ?? 4;
-
-        const forecastRes = await fetch(
-          "/api/market-data/forecasts?metric=realEstateGrowth&yearsAhead=30"
-        );
-        const forecastJson: ForecastResponse = await forecastRes.json();
 
         setInputs((prev) => ({
           ...prev,
@@ -365,7 +374,6 @@ export default function ZwrotInwestycji() {
         }));
 
         setInflationAvg(inflation);
-        setPropertyForecast(forecastJson.data || []);
       } catch (error) {
         console.error("Nie udało się pobrać danych domyślnych:", error);
       }
@@ -396,7 +404,7 @@ export default function ZwrotInwestycji() {
     {
       key: "years",
       label: "Okres inwestycji (lata)",
-      hint: "Liczba lat przyjęta do obliczeń przepływów i wskaźników.",
+      hint: "Maksymalny okres inwestycji dla wykresów i tabeli wynosi 40 lat.",
       isDefault: false,
     },
     {
@@ -439,22 +447,80 @@ export default function ZwrotInwestycji() {
       ...prev,
       [name]: parsedValue ?? 0,
     }));
+
+    if (name === "years") {
+      setValidationMessage("");
+    }
   };
 
   const handleBlur = (fieldKey: string) => {
     const currentValue = inputs[fieldKey as keyof InvestmentInputs];
+
     setInputValues((prev) => ({
       ...prev,
       [fieldKey]: formatLocalizedNumber(Number(currentValue)),
     }));
   };
 
+  const handleDownloadPdf = async () => {
+    if (!reportRef.current) return;
+
+    const html2canvas = (await import("html2canvas")).default;
+    const { jsPDF } = await import("jspdf");
+
+    const canvas = await html2canvas(reportRef.current, {
+      scale: 2,
+      backgroundColor: "#111827",
+      useCORS: true,
+    });
+
+    const imgData = canvas.toDataURL("image/png");
+    const pdf = new jsPDF("p", "mm", "a4");
+
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+    let heightLeft = imgHeight;
+    let position = 0;
+
+    pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+
+    heightLeft -= pageHeight;
+
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight;
+      pdf.addPage();
+      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+    }
+
+    pdf.save("wyniki-kalkulatora-fincalc-pro.pdf");
+  };
+
   const calculate = () => {
+    if (inputs.years > 40) {
+      setValidationMessage("Maksymalny okres inwestycji wynosi 40 lat.");
+      setRows([]);
+      setKpis(null);
+      return;
+    }
+
+    setValidationMessage("");
+
     const annualRevenue = inputs.monthlyRevenue * 12;
     const annualCosts = inputs.monthlyCosts * 12;
     const discountRate = inputs.riskFreeRate / 100;
     const taxRate = inputs.taxRate / 100;
-    const reinvestedShare = Math.min(Math.max(inputs.reinvestedPercent / 100, 0), 1);
+    const reinvestedShare = Math.min(
+      Math.max(inputs.reinvestedPercent / 100, 0),
+      1
+    );
+
+    const belkaTaxRate = 0.19;
+    const riskFreeNetRate = discountRate * (1 - belkaTaxRate);
 
     const cashflows: number[] = [-inputs.investmentValue];
     const yearlyRows: YearlyRow[] = [];
@@ -462,6 +528,9 @@ export default function ZwrotInwestycji() {
     let cumulativeCashflow = 0;
     let cumulativeNpv = -inputs.investmentValue;
     let propertyValue = inputs.investmentValue;
+    let reinvestedPortfolioValue = 0;
+    let reinvestedPrincipal = 0;
+    let reinvestmentGain = 0;
 
     for (let year = 1; year <= inputs.years; year++) {
       const taxableProfit = annualRevenue - annualCosts;
@@ -473,11 +542,28 @@ export default function ZwrotInwestycji() {
       cumulativeNpv += discountedCashflow;
       cashflows.push(netCashflow);
 
-      const forecastGrowth = propertyForecast[year - 1]?.value ?? inputs.propertyGrowthRate;
+      const forecastGrowth = inputs.propertyGrowthRate;
+
       propertyValue = propertyValue * (1 + forecastGrowth / 100);
 
+      reinvestedPortfolioValue =
+        reinvestedPortfolioValue * (1 + riskFreeNetRate);
+
+      const reinvestedAmount = netCashflow > 0 ? netCashflow * reinvestedShare : 0;
+
+      reinvestedPortfolioValue += reinvestedAmount;
+      reinvestedPrincipal += reinvestedAmount;
+      reinvestmentGain = reinvestedPortfolioValue - reinvestedPrincipal;
+
+      const propertyGain = propertyValue - inputs.investmentValue;
+
+      const totalInvestmentGain =
+        cumulativeCashflow + propertyGain + reinvestmentGain;
+
       const runningCashflows = cashflows.slice(0, year + 1);
+
       const runningIrr = calculateIRR(runningCashflows);
+
       const runningMirr = calculateMIRR(
         runningCashflows,
         discountRate,
@@ -486,15 +572,29 @@ export default function ZwrotInwestycji() {
       );
 
       const avgReturnToDate =
-        inputs.investmentValue > 0
+        inputs.investmentValue > 0 &&
+        inputs.investmentValue + totalInvestmentGain > 0
           ? (Math.pow(
-              (inputs.investmentValue + cumulativeCashflow) /
+              (inputs.investmentValue + totalInvestmentGain) /
                 inputs.investmentValue,
               1 / year
             ) -
               1) *
             100
           : null;
+
+      const totalGainReturnPercent =
+        inputs.investmentValue > 0
+          ? (totalInvestmentGain / inputs.investmentValue) * 100
+          : 0;
+
+      const rentReturnPercent =
+        inputs.investmentValue > 0
+          ? (cumulativeCashflow / inputs.investmentValue) * 100
+          : 0;
+
+      const cumulativeInflationPercent =
+        (Math.pow(1 + inflationAvg / 100, year) - 1) * 100;
 
       yearlyRows.push({
         year,
@@ -507,36 +607,98 @@ export default function ZwrotInwestycji() {
         cumulativeNpv,
         runningIrr: runningIrr !== null ? runningIrr * 100 : null,
         runningMirr: runningMirr !== null ? runningMirr * 100 : null,
-        avgReturnToDate: Number.isFinite(avgReturnToDate) ? avgReturnToDate : null,
+        avgReturnToDate: Number.isFinite(avgReturnToDate)
+          ? avgReturnToDate
+          : null,
         avgInflationToDate: inflationAvg,
         propertyValue,
-        totalInvestmentValue: cumulativeCashflow + propertyValue,
+        totalInvestmentValue: inputs.investmentValue + totalInvestmentGain,
         propertyGrowthApplied: forecastGrowth,
+        propertyGain,
+        reinvestedAmount,
+        reinvestedAmountCumulative: reinvestedPrincipal,
+        reinvestmentGainCumulative: reinvestmentGain,
+        totalGainCumulative: totalInvestmentGain,
+        totalGainReturnPercent,
+        rentReturnPercent,
+        cumulativeInflationPercent,
       });
     }
 
-    const irr = calculateIRR(cashflows);
-    const mirr = calculateMIRR(cashflows, discountRate, discountRate, reinvestedShare);
-    const npv = calculateNPV(discountRate, cashflows);
-    const roi =
-      ((cashflows.slice(1).reduce((acc, cf) => acc + cf, 0) -
-        inputs.investmentValue) /
-        inputs.investmentValue) *
-      100;
+    let paybackYear: number | string = "—";
+    let paybackCumulativeCashflow = 0;
+    let paybackPropertyValue = inputs.investmentValue;
+    let paybackReinvestedPortfolioValue = 0;
+    let paybackReinvestedPrincipal = 0;
 
-    const paybackYear =
-      yearlyRows.find((row) => row.cumulativeCashflow >= inputs.investmentValue)
-        ?.year ?? "—";
+    for (let year = 1; year <= 200; year++) {
+      const taxableProfit = annualRevenue - annualCosts;
+      const tax = taxableProfit > 0 ? taxableProfit * taxRate : 0;
+      const netCashflow = taxableProfit - tax;
 
-    const avgAnnualReturn = mirr !== null ? mirr * 100 : 0;
+      paybackCumulativeCashflow += netCashflow;
+
+      paybackPropertyValue =
+        paybackPropertyValue * (1 + inputs.propertyGrowthRate / 100);
+
+      paybackReinvestedPortfolioValue =
+        paybackReinvestedPortfolioValue * (1 + riskFreeNetRate);
+
+      const reinvestedAmount =
+        netCashflow > 0 ? netCashflow * reinvestedShare : 0;
+
+      paybackReinvestedPortfolioValue += reinvestedAmount;
+      paybackReinvestedPrincipal += reinvestedAmount;
+
+      const propertyGain = paybackPropertyValue - inputs.investmentValue;
+
+      const paybackReinvestmentGain =
+        paybackReinvestedPortfolioValue - paybackReinvestedPrincipal;
+
+      const totalGain =
+        paybackCumulativeCashflow + propertyGain + paybackReinvestmentGain;
+
+      if (totalGain >= inputs.investmentValue) {
+        paybackYear = year;
+        break;
+      }
+    }
+
+    const finalPropertyGain = propertyValue - inputs.investmentValue;
+
+    const totalInvestmentGain =
+      cumulativeCashflow + finalPropertyGain + reinvestmentGain;
+
+    const rentIncomeReturn =
+      inputs.investmentValue > 0
+        ? (cumulativeCashflow / inputs.investmentValue) * 100
+        : 0;
+
+    const riskFreeGain =
+      inputs.investmentValue *
+      (Math.pow(1 + riskFreeNetRate, inputs.years) - 1);
+
+    const avgAnnualReturn =
+      inputs.investmentValue > 0 &&
+      inputs.investmentValue + totalInvestmentGain > 0
+        ? (Math.pow(
+            (inputs.investmentValue + totalInvestmentGain) /
+              inputs.investmentValue,
+            1 / inputs.years
+          ) -
+            1) *
+          100
+        : 0;
 
     setRows(yearlyRows);
+    setFirstViewMode("chart");
+
     setKpis({
-      npv: formatCurrency(npv),
-      irr: irr !== null ? formatPercent(irr * 100) : "—",
-      mirr: mirr !== null ? formatPercent(mirr * 100) : "—",
-      roi: formatPercent(roi),
-      pb: String(paybackYear),
+      rentIncomeFinal: formatCurrency(cumulativeCashflow),
+      rentIncomeReturn: formatPercent(rentIncomeReturn),
+      totalInvestmentGain: formatCurrency(totalInvestmentGain),
+      riskFreeGain: formatCurrency(riskFreeGain),
+      payback: paybackYear === "—" ? "—" : `${paybackYear} lat`,
       returnVsInflation: `${avgAnnualReturn.toFixed(1)}% / ${inflationAvg.toFixed(
         1
       )}%`,
@@ -545,253 +707,359 @@ export default function ZwrotInwestycji() {
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-6">
-      <motion.h1
-        className="text-3xl font-bold mb-6 text-center text-yellow-400 flex items-center justify-center gap-2"
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-        Policz stopę zwrotu z Twojej inwestycji
-        <InfoHint text="To narzędzie służy do analizy opłacalności inwestycji na podstawie rocznych przepływów pieniężnych, podatku, stopy wolnej od ryzyka oraz reinwestycji przepływów do obliczenia MIRR." />
-      </motion.h1>
+      <div ref={reportRef}>
+        <div className="relative">
+          <motion.h1
+            className="text-3xl font-bold mb-6 text-center text-yellow-400 flex items-center justify-center gap-2"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            Policz stopę zwrotu z Twojej inwestycji
+            <InfoHint text="To narzędzie służy do analizy opłacalności inwestycji na podstawie rocznych przepływów pieniężnych, podatku, stopy wolnej od ryzyka oraz reinwestycji przepływów do obliczenia MIRR." />
+          </motion.h1>
 
-      <div className="grid grid-cols-1 md:grid-cols-[1.15fr_1.85fr] gap-6">
-        <Card className="bg-[#34241b] rounded-2xl p-6 shadow-lg border border-yellow-600/30">
-          <CardContent>
-            <div className="flex flex-col gap-4">
-              {inputConfig.map((field) => (
-                <div key={field.key} className="relative pt-1">
-                  <div className="absolute right-2 -top-[3px] flex items-center gap-2">
-                    {field.isDefault && <DefaultSourceHint />}
-                    <InfoHint text={field.hint} />
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            className="absolute right-0 top-0 flex items-center gap-2 rounded-lg bg-gray-600 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-500 transition"
+          >
+            <span className="text-xs font-bold">PDF</span>
+            <span>Eksport</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-[1.15fr_1.85fr] gap-6">
+          <Card className="bg-[#34241b] rounded-2xl p-6 shadow-lg border border-yellow-600/30">
+            <CardContent>
+              <div className="flex flex-col gap-4">
+                {inputConfig.map((field) => (
+                  <div key={field.key} className="relative pt-1">
+                    <div className="absolute right-2 -top-[3px] flex items-center gap-2">
+                      {field.isDefault && <DefaultSourceHint />}
+                      <InfoHint text={field.hint} />
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-sm text-yellow-200 pr-16 leading-tight">
+                        {field.label}
+                      </label>
+
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        name={field.key}
+                        value={inputValues[field.key]}
+                        onChange={handleChange}
+                        onBlur={() => handleBlur(field.key)}
+                        className={`w-full px-3 py-1.5 border border-yellow-700/25 rounded-md text-black text-lg font-semibold ${
+                          ["riskFreeRate", "propertyGrowthRate", "taxRate"].includes(
+                            field.key
+                          )
+                            ? "bg-[#b8c1cc]"
+                            : "bg-[#eef1f4]"
+                        }`}
+                      />
+                    </div>
                   </div>
+                ))}
+              </div>
 
-                  <div className="flex flex-col gap-1">
-                    <label className="text-sm text-yellow-200 pr-16 leading-tight">
-                      {field.label}
-                    </label>
-
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      name={field.key}
-                      value={inputValues[field.key]}
-                      onChange={handleChange}
-                      onBlur={() => handleBlur(field.key)}
-                      className={`w-full px-3 py-1.5 border border-yellow-700/25 rounded-md text-black text-lg font-semibold ${
-                        ["riskFreeRate", "propertyGrowthRate", "taxRate"].includes(field.key)
-                          ? "bg-[#b8c1cc]"
-                          : "bg-[#eef1f4]"
-                      }`}
-                    />
-                  </div>
+              {validationMessage && (
+                <div className="mt-4 rounded-lg border border-orange-400/60 bg-orange-500/10 px-4 py-3 text-sm font-semibold text-orange-200">
+                  {validationMessage}
                 </div>
-              ))}
-            </div>
+              )}
 
-            <Button
-              onClick={calculate}
-              className="mt-4 bg-green-600 hover:bg-green-700 w-full"
-            >
-              Oblicz
-            </Button>
-          </CardContent>
-        </Card>
+              <Button
+                onClick={calculate}
+                className="mt-4 bg-green-600 hover:bg-green-700 w-full"
+              >
+                Oblicz
+              </Button>
+            </CardContent>
+          </Card>
 
-        <div className="flex flex-col gap-6">
-          {kpis && (
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-2">
-              <KpiBox
-                label="NPV"
-                value={kpis.npv}
-                hint="Wartość bieżąca netto inwestycji po zdyskontowaniu przyszłych przepływów stopą wolną od ryzyka."
-              />
-              <KpiBox
-                label="IRR"
-                value={kpis.irr}
-                hint="Wewnętrzna stopa zwrotu inwestycji."
-              />
-              <KpiBox
-                label="MIRR"
-                value={kpis.mirr}
-                hint="Zmodyfikowana wewnętrzna stopa zwrotu z reinwestycją dodatnich przepływów według stopy wolnej od ryzyka."
-              />
-              <KpiBox
-                label="ROI"
-                value={kpis.roi}
-                hint="Procentowy zwrot z inwestycji względem kapitału początkowego."
-              />
-              <KpiBox
-                label="PB"
-                value={kpis.pb}
-                hint="Liczba lat potrzebnych do odzyskania wartości inwestycji z przepływów netto."
-              />
-              <KpiBox
-                label="Stopa zwrotu / inflacja"
-                value={kpis.returnVsInflation}
-                hint="Średnia roczna stopa zwrotu z przyjętego okresu obliczeń zestawiona ze średnią roczną inflacją."
-              />
-            </div>
-          )}
+          <div className="flex flex-col gap-6">
+            {kpis && (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-2">
+                <KpiBox
+                  label="Zysk z najmu"
+                  value={kpis.rentIncomeFinal}
+                  hint="Suma dochodów netto z najmu za cały okres inwestycji, po odjęciu kosztów i podatku, bez dyskontowania i bez reinwestycji."
+                />
 
-          {rows.length > 0 && (
-            <>
-              <Card className="bg-[#3c2a20] rounded-2xl p-6 border border-yellow-600/30">
-                <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[900px] text-left border-collapse text-white text-sm">
-                      <thead>
-                        <tr className="border-b border-yellow-500">
-                          <th className="p-2">Rok</th>
-                          <th className="p-2">Przychody</th>
-                          <th className="p-2">Koszty</th>
-                          <th className="p-2">Podatek</th>
-                          <th className="p-2">Netto</th>
-                          <th className="p-2">NPV roczne</th>
-                          <th className="p-2">Wartość nieruchomości</th>
-                          <th className="p-2">Skumulowany cash flow</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows.map((r) => (
-                          <tr key={r.year} className="border-b border-gray-700">
-                            <td className="p-2">{r.year}</td>
-                            <td className="p-2">{formatCurrency(r.revenue)}</td>
-                            <td className="p-2">{formatCurrency(r.costs)}</td>
-                            <td className="p-2">{formatCurrency(r.tax)}</td>
-                            <td className="p-2">{formatCurrency(r.netCashflow)}</td>
-                            <td className="p-2">{formatCurrency(r.discountedCashflow)}</td>
-                            <td className="p-2">{formatCurrency(r.propertyValue)}</td>
-                            <td className="p-2">{formatCurrency(r.cumulativeCashflow)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
+                <KpiBox
+                  label="Zysk z najmu / inwestycja"
+                  value={kpis.rentIncomeReturn}
+                  hint="Suma dochodów netto z najmu odniesiona procentowo do początkowej wartości inwestycji."
+                />
 
-              <Card className="bg-[#3c2a20] rounded-2xl p-6 border border-yellow-600/30">
-                <CardContent>
-                  <h3 className="text-lg font-semibold text-yellow-300 mb-4">
-                    Wykres NPV
-                  </h3>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <LineChart data={rows}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#ffaa00" />
-                      <XAxis dataKey="year" stroke="#fff" tick={{ fill: "#fff" }} />
-                      <YAxis stroke="#fff" tick={{ fill: "#fff" }} />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: "#444", color: "#fff" }}
-                        formatter={(value: any) => formatCurrency(Number(value))}
-                      />
-                      <Legend wrapperStyle={{ color: "#fff" }} />
-                      <Line
-                        type="monotone"
-                        dataKey="cumulativeNpv"
-                        stroke="#ff9900"
-                        strokeWidth={2}
-                        name="Skumulowane NPV"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
+                <KpiBox
+                  label="Całkowity wynik inwestycji"
+                  value={kpis.totalInvestmentGain}
+                  hint="Łączny wynik inwestycji bez odejmowania nakładów początkowych: zysk z najmu, zmiana wartości nieruchomości oraz zysk z reinwestowanych przepływów."
+                />
 
-              <Card className="bg-[#3c2a20] rounded-2xl p-6 border border-yellow-600/30">
-                <CardContent>
-                  <h3 className="text-lg font-semibold text-yellow-300 mb-4">
-                    Wykres IRR
-                  </h3>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <LineChart data={rows}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#ffaa00" />
-                      <XAxis dataKey="year" stroke="#fff" tick={{ fill: "#fff" }} />
-                      <YAxis stroke="#fff" tick={{ fill: "#fff" }} />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: "#444", color: "#fff" }}
-                        formatter={(value: any) =>
-                          value === null ? "—" : formatPercent(Number(value))
+                <KpiBox
+                  label="Zysk bez ryzyka"
+                  value={kpis.riskFreeGain}
+                  hint="Zysk, jaki inwestor mógłby uzyskać, lokując początkową wartość inwestycji po stopie wolnej od ryzyka, po podatku Belki 19%."
+                />
+
+                <KpiBox
+                  label="Okres zwrotu"
+                  value={kpis.payback}
+                  hint="Liczba lat, po których suma zysków z najmu, zmiany wartości nieruchomości i reinwestowanych przepływów przewyższa nakłady początkowe."
+                />
+
+                <KpiBox
+                  label="Stopa zwrotu / inflacja"
+                  value={kpis.returnVsInflation}
+                  hint="Średnia roczna stopa zwrotu z całej inwestycji zestawiona ze średnioroczną inflacją."
+                />
+              </div>
+            )}
+
+            {rows.length > 0 && (
+              <>
+                <Card className="bg-[#3c2a20] rounded-2xl p-6 border border-yellow-600/30">
+                  <CardContent>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold text-yellow-300">
+                        Wynik inwestycji w czasie
+                      </h3>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setFirstViewMode((prev) =>
+                            prev === "chart" ? "table" : "chart"
+                          )
                         }
-                      />
-                      <Legend wrapperStyle={{ color: "#fff" }} />
-                      <Line
-                        type="monotone"
-                        dataKey="runningIrr"
-                        stroke="#66ccff"
-                        strokeWidth={2}
-                        name="IRR"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
+                        className="rounded-lg bg-gray-600 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-500 transition"
+                      >
+                        {firstViewMode === "chart" ? "Tabela" : "Wykres"}
+                      </button>
+                    </div>
 
-              <Card className="bg-[#3c2a20] rounded-2xl p-6 border border-yellow-600/30">
-                <CardContent>
-                  <h3 className="text-lg font-semibold text-yellow-300 mb-4">
-                    Wykres MIRR
-                  </h3>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <LineChart data={rows}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#ffaa00" />
-                      <XAxis dataKey="year" stroke="#fff" tick={{ fill: "#fff" }} />
-                      <YAxis stroke="#fff" tick={{ fill: "#fff" }} />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: "#444", color: "#fff" }}
-                        formatter={(value: any) =>
-                          value === null ? "—" : formatPercent(Number(value))
-                        }
-                      />
-                      <Legend wrapperStyle={{ color: "#fff" }} />
-                      <Line
-                        type="monotone"
-                        dataKey="runningMirr"
-                        stroke="#00cc66"
-                        strokeWidth={2}
-                        name="MIRR"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
+                    {firstViewMode === "chart" ? (
+                      <ResponsiveContainer width="100%" height={280}>
+                        <LineChart data={rows}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#ffaa00" />
+                          <XAxis
+                            dataKey="year"
+                            stroke="#fff"
+                            tick={{ fill: "#fff" }}
+                          />
+                          <YAxis stroke="#fff" tick={{ fill: "#fff" }} />
+                          <Tooltip
+                            contentStyle={{ backgroundColor: "#444", color: "#fff" }}
+                            formatter={(value: any) =>
+                              formatCurrency(Number(value))
+                            }
+                          />
+                          <Legend wrapperStyle={{ color: "#fff" }} />
 
-              <Card className="bg-[#3c2a20] rounded-2xl p-6 border border-yellow-600/30">
-                <CardContent>
-                  <h3 className="text-lg font-semibold text-yellow-300 mb-4">
-                    Wykres stopy zwrotu vs inflacja
-                  </h3>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <LineChart data={rows}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#ffaa00" />
-                      <XAxis dataKey="year" stroke="#fff" tick={{ fill: "#fff" }} />
-                      <YAxis stroke="#fff" tick={{ fill: "#fff" }} />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: "#444", color: "#fff" }}
-                        formatter={(value: any) =>
-                          value === null ? "—" : formatPercent(Number(value))
-                        }
-                      />
-                      <Legend wrapperStyle={{ color: "#fff" }} />
-                      <Line
-                        type="monotone"
-                        dataKey="avgReturnToDate"
-                        stroke="#ff9900"
-                        strokeWidth={2}
-                        name="Średnia roczna stopa zwrotu"
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="avgInflationToDate"
-                        stroke="#ff5c5c"
-                        strokeWidth={2}
-                        name="Średnia roczna inflacja"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            </>
-          )}
+                          <Line
+                            type="monotone"
+                            dataKey="cumulativeCashflow"
+                            stroke="#00cc66"
+                            strokeWidth={2}
+                            name="Najem netto narastająco"
+                          />
+
+                          <Line
+                            type="monotone"
+                            dataKey="totalGainCumulative"
+                            stroke="#66ccff"
+                            strokeWidth={2}
+                            name="Suma zysków narastająco"
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[860px] table-fixed text-left border-collapse text-white text-sm">
+                          <thead>
+                            <tr>
+                              <th className="w-[60px] p-2 border border-dashed border-[#ffaa00] whitespace-normal break-words">
+                                Rok
+                              </th>
+                              <th className="w-[115px] p-2 border border-dashed border-[#ffaa00] whitespace-normal break-words leading-tight">
+                                Zysk roczny z najmu
+                              </th>
+                              <th className="w-[115px] p-2 border border-dashed border-[#ffaa00] whitespace-normal break-words leading-tight">
+                                Zysk z najmu narastająco
+                              </th>
+                              <th className="w-[115px] p-2 border border-dashed border-[#ffaa00] whitespace-normal break-words leading-tight">
+                                Wartość nieruchomości
+                              </th>
+                              <th className="w-[115px] p-2 border border-dashed border-[#ffaa00] whitespace-normal break-words leading-tight">
+                                Reinwestowana kwota
+                              </th>
+                              <th className="w-[115px] p-2 border border-dashed border-[#ffaa00] whitespace-normal break-words leading-tight">
+                                Zysk z reinwestycji narastająco
+                              </th>
+                              <th className="w-[115px] p-2 border border-dashed border-[#ffaa00] whitespace-normal break-words leading-tight">
+                                Suma zysków narastająco
+                              </th>
+                            </tr>
+                          </thead>
+
+                          <tbody>
+                            {rows.map((r) => (
+                              <tr key={r.year}>
+                                <td className="w-[60px] p-2 border border-dashed border-[#ffaa00]">
+                                  {r.year}
+                                </td>
+                                <td className="w-[115px] p-2 border border-dashed border-[#ffaa00]">
+                                  {formatCurrency(r.netCashflow)}
+                                </td>
+                                <td className="w-[115px] p-2 border border-dashed border-[#ffaa00]">
+                                  {formatCurrency(r.cumulativeCashflow)}
+                                </td>
+                                <td className="w-[115px] p-2 border border-dashed border-[#ffaa00]">
+                                  {formatCurrency(r.propertyValue)}
+                                </td>
+                                <td className="w-[115px] p-2 border border-dashed border-[#ffaa00]">
+                                  {formatCurrency(r.reinvestedAmount)}
+                                </td>
+                                <td className="w-[115px] p-2 border border-dashed border-[#ffaa00]">
+                                  {formatCurrency(r.reinvestmentGainCumulative)}
+                                </td>
+                                <td className="w-[115px] p-2 border border-dashed border-[#ffaa00]">
+                                  {formatCurrency(r.totalGainCumulative)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-[#3c2a20] rounded-2xl p-6 border border-yellow-600/30">
+                  <CardContent>
+                    <h3 className="text-lg font-semibold text-yellow-300 mb-4">
+                      Stopa zwrotu narastająco
+                    </h3>
+
+                    <ResponsiveContainer width="100%" height={280}>
+                      <BarChart data={rows}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#ffaa00" />
+                        <XAxis
+                          dataKey="year"
+                          stroke="#fff"
+                          tick={{ fill: "#fff" }}
+                        />
+                        <YAxis stroke="#fff" tick={{ fill: "#fff" }} />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: "#444", color: "#fff" }}
+                          formatter={(value: any) => formatPercent(Number(value))}
+                        />
+                        <Legend wrapperStyle={{ color: "#fff" }} />
+
+                        <Bar
+                          dataKey="totalGainReturnPercent"
+                          fill="#66ccff"
+                          name="Stopa zwrotu z całej inwestycji narastająco"
+                        />
+
+                        <Bar
+                          dataKey="rentReturnPercent"
+                          fill="#00cc66"
+                          name="Stopa zwrotu z najmu po podatku narastająco"
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-[#3c2a20] rounded-2xl p-6 border border-yellow-600/30">
+                  <CardContent>
+                    <h3 className="text-lg font-semibold text-yellow-300 mb-4">
+                      Zysk z inwestycji vs inflacja
+                    </h3>
+
+                    <ResponsiveContainer width="100%" height={280}>
+                      <LineChart data={rows}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#ffaa00" />
+                        <XAxis
+                          dataKey="year"
+                          stroke="#fff"
+                          tick={{ fill: "#fff" }}
+                        />
+                        <YAxis stroke="#fff" tick={{ fill: "#fff" }} />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: "#444", color: "#fff" }}
+                          formatter={(value: any) => formatPercent(Number(value))}
+                        />
+                        <Legend wrapperStyle={{ color: "#fff" }} />
+
+                        <Line
+                          type="monotone"
+                          dataKey="totalGainReturnPercent"
+                          stroke="#66ccff"
+                          strokeWidth={2}
+                          name="Zysk z inwestycji narastająco"
+                        />
+
+                        <Line
+                          type="monotone"
+                          dataKey="cumulativeInflationPercent"
+                          stroke="#ff5c5c"
+                          strokeWidth={2}
+                          name="Inflacja narastająco"
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-[#3c2a20] rounded-2xl p-6 border border-yellow-600/30">
+                  <CardContent>
+                    <h3 className="text-lg font-semibold text-yellow-300 mb-4">
+                      Zysk z najmu vs inflacja
+                    </h3>
+
+                    <ResponsiveContainer width="100%" height={280}>
+                      <LineChart data={rows}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#ffaa00" />
+                        <XAxis
+                          dataKey="year"
+                          stroke="#fff"
+                          tick={{ fill: "#fff" }}
+                        />
+                        <YAxis stroke="#fff" tick={{ fill: "#fff" }} />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: "#444", color: "#fff" }}
+                          formatter={(value: any) => formatPercent(Number(value))}
+                        />
+                        <Legend wrapperStyle={{ color: "#fff" }} />
+
+                        <Line
+                          type="monotone"
+                          dataKey="rentReturnPercent"
+                          stroke="#00cc66"
+                          strokeWidth={2}
+                          name="Zysk z najmu po podatku narastająco"
+                        />
+
+                        <Line
+                          type="monotone"
+                          dataKey="cumulativeInflationPercent"
+                          stroke="#ff5c5c"
+                          strokeWidth={2}
+                          name="Inflacja narastająco"
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -806,4 +1074,3 @@ export default function ZwrotInwestycji() {
     </div>
   );
 }
-

@@ -4,14 +4,16 @@ import Link from "next/link";
 export default function KalkulatoryPage() {
   const kalkulatory = [
     {
-      title: "Zwrot z inwestycji w nieruchomości",
-      desc: "Oblicz rentowność inwestycji i poznaj NPV, ROI, Payback.",
+      title: "Zysk inwestycji",
+      desc: "Oblicz zysk z Twojej inwestycji, rentowność, okres zwrotu nakładów oraz porównaj wyniki z inflacją - kalkulator najlepiej sprawdza się dla wynajmu, ale można analizować też inne projekty",
       href: "/kalkulatory/zwrot-inwestycji",
+      free: true,
     },
     {
-      title: "Kalkulator ROI",
-      desc: "Oblicz zwrot z inwestycji w procentach dla dowolnego projektu.",
+      title: "Kalkulator wartości przyszłej",
+      desc: "Sprawdź ile otrzymasz z lokaty bankowej, obligacji lub innych papierów depozytowch",
       href: "#",
+      free: true,
     },
     {
       title: "Kalkulator kredytu hipotecznego",
@@ -42,14 +44,14 @@ export default function KalkulatoryPage() {
       </h1>
 
       <p className="text-gray-300 text-center max-w-2xl mx-auto mb-12">
-        Wybierz interesujący Cię kalkulator, aby rozpocząć analizę. Dodajemy nowe narzędzia regularnie!
+        Wybierz interesujący Cię kalkulator, aby rozpocząć analizę
       </p>
 
       <div className="grid md:grid-cols-3 gap-8">
         {kalkulatory.map((item, idx) => (
           <div
             key={idx}
-            className="rounded-2xl p-6 shadow-md transition duration-300 hover:-translate-y-1 hover:shadow-lg"
+            className="rounded-2xl p-6 shadow-md transition duration-300 hover:-translate-y-1 hover:shadow-lg flex flex-col"
             style={{
               background: "rgba(168,203,176,0.14)",
               border: "1px solid #3f7a59",
@@ -62,14 +64,37 @@ export default function KalkulatoryPage() {
               {item.title}
             </h3>
 
-            <p className="text-gray-200 mb-6">{item.desc}</p>
+            <p className="text-gray-200 mb-6 flex-grow">
+              {item.desc}
+            </p>
 
-            <Link
-              href={item.href}
-              className="inline-block bg-orange-500 hover:bg-orange-600 text-white font-semibold px-6 py-2 rounded-lg transition"
-            >
-              Uruchom
-            </Link>
+            <div className="flex items-center justify-between mt-auto">
+              <Link
+                href={item.href}
+                className="
+                  inline-flex items-center justify-center
+                  px-6 py-2 rounded-lg
+                  font-semibold text-green-100
+                  transition duration-200
+                  border
+                "
+                style={{
+                  borderColor: "#3f7a59",
+                  background: "rgba(168,203,176,0.12)",
+                }}
+              >
+                Uruchom
+              </Link>
+
+              {item.free && (
+                <span
+                  className="text-sm font-semibold tracking-wide"
+                  style={{ color: "#ff6b6b" }}
+                >
+                  &gt;&gt; dostęp bezpłatny
+                </span>
+              )}
+            </div>
           </div>
         ))}
       </div>
