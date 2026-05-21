@@ -4,35 +4,35 @@ import Link from "next/link";
 export default function KalkulatoryPage() {
   const kalkulatory = [
     {
-      title: "Zysk inwestycji",
+      title: "Zysk z inwestycji",
       desc: "Oblicz zysk z Twojej inwestycji, rentowność, okres zwrotu nakładów oraz porównaj wyniki z inflacją - kalkulator najlepiej sprawdza się dla wynajmu, ale można analizować też inne projekty",
       href: "/kalkulatory/zwrot-inwestycji",
       free: true,
     },
     {
-      title: "Kalkulator wartości przyszłej",
-      desc: "Sprawdź ile otrzymasz z lokaty bankowej, obligacji lub innych papierów depozytowch",
-      href: "#",
+      title: "Kalkulator wartości przyszłej - lokaty, depozyty",
+      desc: "Sprawdź ile otrzymasz z lokaty bankowej, obligacji lub innych papierów depozytowych",
+      href: "/kalkulatory/kalkulator-wartosci-przyszlej",
       free: true,
     },
     {
-      title: "Kalkulator kredytu hipotecznego",
-      desc: "Policz ratę miesięczną i całkowity koszt kredytu.",
+      title: "Zaawansowany kalkulator do porównywania kilku inwestycji",
+      desc: "Porównaj za pomocą naszego modelu kilka inwestycji zanim podejmiesz decyzję",
       href: "#",
     },
     {
-      title: "Kalkulator wartości przyszłej (FV)",
-      desc: "Sprawdź ile będzie wart Twój kapitał w przyszłości przy danej stopie zwrotu.",
+      title: "Maskymalizuj wartość końcową inwestycji wspomagjąc się kapitałem obcym",
+      desc: "Zbadaj jaki udział kapitału obcego zapewni Ci największą wartość końcową inwestycji ",
       href: "#",
     },
     {
-      title: "Kalkulator realnej wartości kapitału",
-      desc: "Zobacz jak inflacja wpływa na siłę nabywczą Twoich pieniędzy.",
+      title: "Oblicz zysk z wynajmu krótkoterminowego",
+      desc: "Analizuj jaki możesz osiągnąć zysk z wynajmu krótkoterminowego zmieniając różne parametry",
       href: "#",
     },
     {
-      title: "Kalkulator progu rentowności",
-      desc: "Oblicz kiedy inwestycja zacznie generować zysk netto.",
+      title: "Kalkulator decyzyjny kredyt czy leasing",
+      desc: "Potrzebujesz sfinansować zakup auta, maszyny lub urządzenia i nie wiesz, co Ci się bardziej opłaca kredyt czy leasing - znajdź odpowiedzi",
       href: "#",
     },
   ];
