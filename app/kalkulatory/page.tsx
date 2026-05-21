@@ -17,9 +17,10 @@ export default function KalkulatoryPage() {
     },
     {
       title: "Zaawansowany kalkulator do porównywania kilku inwestycji",
-      desc: "Porównaj za pomocą naszego modelu kilka inwestycji zanim podejmiesz decyzję",
-      href: "#",
-    },
+      desc: "Zaawansowany model porównujący do 6 inwestycji jednocześnie z analizą wartości końcowej, stopy zwrotu i okresu zwrotu",
+      href: "/kalkulatory/porownanie-inwestycji",
+      free: false,
+},
     {
       title: "Maskymalizuj wartość końcową inwestycji wspomagjąc się kapitałem obcym",
       desc: "Zbadaj jaki udział kapitału obcego zapewni Ci największą wartość końcową inwestycji ",
