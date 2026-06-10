@@ -411,14 +411,14 @@ export default function KalkulatorPrzyszlejWartosciLokaty() {
     {
       key: "compoundingFrequency",
       label: "Częstotliwość kapitalizacji w okresie lokaty",
-      hint: "Ile razy w całym okresie lokaty lub obligacji odsetki będą naliczane. Jeśli odsetki są naliczane tylko raz na koniec okresu, wpisz 1.",
+      hint: "Ile razy w całym okresie lokaty lub obligacji odsetki będą naliczane. Przykład: 3 miesiące i wartość 1 oznacza naliczenie raz na koniec okresu. 3 miesiące i wartość 3 oznacza kapitalizację co miesiąc. 3 lata i wartość 3 oznacza kapitalizację raz w roku.",
       isDefault: false,
     },
     {
       key: "years",
       label: inputs.timeUnit === "lata"
-        ? "Okres lokaty / obligacji (inne) - lata"
-        : "Okres lokaty / obligacji (inne) - miesiące",
+        ? "Okres lokaty / obligacji (inne aktywa) - lata"
+        : "Okres lokaty / obligacji (inne aktywa) - miesiące",
       hint: inputs.timeUnit === "lata"
         ? "Podaj okres inwestycji w latach. Maksymalny okres dla wykresów i tabeli wynosi 40 lat."
         : "Podaj okres inwestycji w miesiącach. Na przykład 36 miesięcy oznacza 3 lata. Maksymalny okres dla wykresów i tabeli wynosi 480 miesięcy.",
@@ -587,33 +587,47 @@ export default function KalkulatorPrzyszlejWartosciLokaty() {
 
     const chartData: ChartRow[] = [];
 
-    if (years < 1) {
+    if (years <= 1) {
       const finalRowForShortPeriod = generatedRows[generatedRows.length - 1];
       const grossInterestForShortPeriod = generatedRows.reduce((sum, row) => sum + row.grossInterest, 0);
       const netInterestForShortPeriod = generatedRows.reduce((sum, row) => sum + row.netInterest, 0);
+      const cumulativeNetInterestForShortPeriod = netInterestForShortPeriod;
 
       chartData.push({
         label: "Po okresie lokaty",
         grossInterest: grossInterestForShortPeriod,
         netInterest: netInterestForShortPeriod,
-        cumulativeNetInterest: finalRowForShortPeriod?.cumulativeNetInterest ?? 0,
-        totalValue: finalRowForShortPeriod?.totalValue ?? capital,
-        netInterestPercent: finalRowForShortPeriod?.netInterestPercent ?? 0,
+        cumulativeNetInterest: cumulativeNetInterestForShortPeriod,
+        totalValue: capital + cumulativeNetInterestForShortPeriod,
+        netInterestPercent: capital > 0 ? (cumulativeNetInterestForShortPeriod / capital) * 100 : 0,
       });
     } else {
       const chartYears = Math.max(Math.ceil(years), 0);
+      let cumulativeNetInterestForTable = 0;
 
       for (let year = 1; year <= chartYears; year++) {
         const yearStart = year - 1;
         const yearEnd = Math.min(year, years);
-        const matchingRows = generatedRows.filter((row) => {
-          const rowEndYears = years * (row.period / frequency);
+
+        const yearlyParts = generatedRows.map((row) => {
           const rowStartYears = years * ((row.period - 1) / frequency);
-          return rowEndYears > yearStart && rowStartYears < yearEnd;
+          const rowEndYears = years * (row.period / frequency);
+          const rowDuration = Math.max(rowEndYears - rowStartYears, 0);
+          const overlapStart = Math.max(rowStartYears, yearStart);
+          const overlapEnd = Math.min(rowEndYears, yearEnd);
+          const overlapDuration = Math.max(overlapEnd - overlapStart, 0);
+          const share = rowDuration > 0 ? overlapDuration / rowDuration : 0;
+
+          return {
+            grossInterest: row.grossInterest * share,
+            netInterest: row.netInterest * share,
+          };
         });
-        const lastRow = matchingRows[matchingRows.length - 1];
-        const yearlyGrossInterest = matchingRows.reduce((sum, row) => sum + row.grossInterest, 0);
-        const yearlyNetInterest = matchingRows.reduce((sum, row) => sum + row.netInterest, 0);
+
+        const yearlyGrossInterest = yearlyParts.reduce((sum, row) => sum + row.grossInterest, 0);
+        const yearlyNetInterest = yearlyParts.reduce((sum, row) => sum + row.netInterest, 0);
+        cumulativeNetInterestForTable += yearlyNetInterest;
+
         const label =
           yearEnd - yearStart < 1
             ? `Okres końcowy (${Math.round((yearEnd - yearStart) * 12)} mies.)`
@@ -623,9 +637,9 @@ export default function KalkulatorPrzyszlejWartosciLokaty() {
           label,
           grossInterest: yearlyGrossInterest,
           netInterest: yearlyNetInterest,
-          cumulativeNetInterest: lastRow?.cumulativeNetInterest ?? 0,
-          totalValue: lastRow?.totalValue ?? capital,
-          netInterestPercent: lastRow?.netInterestPercent ?? 0,
+          cumulativeNetInterest: cumulativeNetInterestForTable,
+          totalValue: capital + cumulativeNetInterestForTable,
+          netInterestPercent: capital > 0 ? (cumulativeNetInterestForTable / capital) * 100 : 0,
         });
       }
     }
@@ -726,7 +740,7 @@ export default function KalkulatorPrzyszlejWartosciLokaty() {
                           <InfoHint text="Wybierz, czy okres inwestycji w kolejnym polu podajesz w latach czy w miesiącach. Jeśli wybierzesz miesiące i wpiszesz 36, kalkulator policzy okres jako 3 lata." />
                         </div>
                         <label className="text-sm text-yellow-200 pr-16 leading-tight">
-                          Inwestycja: lata czy miesiące?
+                          Jednostka czasu lata / miesiące
                         </label>
                         <select
                           value={inputs.timeUnit}
@@ -849,7 +863,7 @@ export default function KalkulatorPrzyszlejWartosciLokaty() {
                     <h3 className="text-lg font-semibold text-yellow-300 mb-4">
                       {inputs.timeUnit === "miesiące" && inputs.years < 12
                         ? "Odsetki po okresie lokaty"
-                        : "Rozkład zysku po latach"}
+                        : "Odsetki narastająco po podatku"}
                     </h3>
                     <ResponsiveContainer width="100%" height={340}>
                       <BarChart
@@ -868,11 +882,11 @@ export default function KalkulatorPrzyszlejWartosciLokaty() {
                         />
                         <Legend wrapperStyle={{ color: "#fff", fontSize: 12 }} />
                         <Bar
-                          dataKey="netInterest"
+                          dataKey="cumulativeNetInterest"
                           fill="#66ccff"
                           name={inputs.timeUnit === "miesiące" && inputs.years < 12
-                            ? "Odsetki netto po okresie"
-                            : "Odsetki netto w roku"}
+                            ? "Odsetki po podatku Belki"
+                            : "Odsetki narastająco po podatku"}
                           maxBarSize={52}
                         >
                           <LabelList
@@ -899,20 +913,16 @@ export default function KalkulatorPrzyszlejWartosciLokaty() {
                         <thead>
                           <tr>
                             <th className="w-[100px] p-2 border border-dashed border-[#ffaa00] whitespace-normal break-words">
-                              {inputs.timeUnit === "miesiące" && inputs.years < 12 ? "Okres" : "Rok"}
+                              Okres
                             </th>
                             <th className="w-[160px] p-2 border border-dashed border-[#ffaa00] whitespace-normal break-words leading-tight">
-                              {inputs.timeUnit === "miesiące" && inputs.years < 12
-                                ? "Odsetki przed podatkiem Belki"
-                                : "Odsetki brutto w roku"}
+                              Odsetki przed podatkiem Belki
                             </th>
                             <th className="w-[160px] p-2 border border-dashed border-[#ffaa00] whitespace-normal break-words leading-tight">
-                              {inputs.timeUnit === "miesiące" && inputs.years < 12
-                                ? "Odsetki po podatku Belki"
-                                : "Odsetki netto w roku"}
+                              Odsetki po podatku Belki
                             </th>
                             <th className="w-[180px] p-2 border border-dashed border-[#ffaa00] whitespace-normal break-words leading-tight">
-                              Odsetki netto narastająco
+                              Odsetki narastająco
                             </th>
                             <th className="w-[160px] p-2 border border-dashed border-[#ffaa00] whitespace-normal break-words leading-tight">
                               Wartość razem
@@ -961,17 +971,13 @@ export default function KalkulatorPrzyszlejWartosciLokaty() {
                           <div className="grid grid-cols-1 gap-2">
                             <div className="flex justify-between gap-4">
                               <span className="text-gray-300">
-                                {inputs.timeUnit === "miesiące" && inputs.years < 12
-                                  ? "Odsetki przed podatkiem Belki"
-                                  : "Odsetki brutto w roku"}
+                                Odsetki przed podatkiem Belki
                               </span>
                               <span className="font-semibold text-white text-right">{formatCurrency(r.grossInterest)}</span>
                             </div>
                             <div className="flex justify-between gap-4">
                               <span className="text-gray-300">
-                                {inputs.timeUnit === "miesiące" && inputs.years < 12
-                                  ? "Odsetki po podatku Belki"
-                                  : "Odsetki netto w roku"}
+                                Odsetki po podatku Belki
                               </span>
                               <span className="font-semibold text-white text-right">{formatCurrency(r.netInterest)}</span>
                             </div>
