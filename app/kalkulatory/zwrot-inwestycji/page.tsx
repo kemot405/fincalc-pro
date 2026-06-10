@@ -498,7 +498,7 @@ export default function ZwrotInwestycji() {
     {
       key: "riskFreeRate",
       label: "Stopa wolna od ryzyka (%)",
-      hint: "Domyślnie pobierana z danych rynkowych. Używana do dyskontowania przepływów i obliczania MIRR.",
+      hint: "Oprocentowanie lokat depozytowych lub papierów wartościowych wolnych od ryzyka takich jak: obligacje i bony skarbowe",
       isDefault: true,
     },
     {
@@ -821,8 +821,8 @@ export default function ZwrotInwestycji() {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            Policz stopę zwrotu z Twojej inwestycji
-            <InfoHint text="To narzędzie służy do analizy opłacalności inwestycji na podstawie rocznych przepływów pieniężnych, podatku, stopy wolnej od ryzyka oraz reinwestycji przepływów do obliczenia MIRR." />
+            Policz Twój zysk z inwestycji (wynajem)
+            <InfoHint text="To narzędzie służy do analizy inwestycji na podstawie rocznych przepływów pieniężnych, po podatku, zmiany wartości aktywów oraz umożliwia analizę reinwestowanych środków do modelowania ostatecznego wyniku finansowego. Pola zostały zaprojektowane pod analizę zysku z wynajmu długoterminowego, ale kalkultor z powodzeniem można też wykorzystać do innych projektów" />
           </motion.h1>
 
           <button

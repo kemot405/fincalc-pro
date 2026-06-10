@@ -17,7 +17,7 @@ export default function KalkulatoryPage() {
     },
     {
       title: "Zaawansowany kalkulator do porównywania kilku inwestycji",
-      desc: "Zaawansowany model porównujący do 6 inwestycji jednocześnie z analizą wartości końcowej, stopy zwrotu i okresu zwrotu",
+      desc: "Za pomocą naszego kalkulatora porównaj różne rodzaje biznesów, do 6 inwestycji jednocześnie z analizą wartości końcowej, stopy zwrotu, okresu zwrotu nakładów i ryzyka",
       href: "/kalkulatory/porownanie-inwestycji",
       free: false,
 },

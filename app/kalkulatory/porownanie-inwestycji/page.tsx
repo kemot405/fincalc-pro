@@ -1,13 +1,15 @@
 "use client";
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
-  BarChart,
-  Bar,
   LineChart,
   Line,
+  BarChart,
+  Bar,
+  ComposedChart,
+  ReferenceLine,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -16,8 +18,9 @@ import {
   LabelList,
   Tooltip,
 } from "recharts";
+import inflationForecastData from "../../../data/market-data/inflation-forecast.json";
 
-const MAX_INVESTMENTS = 6;
+const MAX_INVESTMENTS = 5;
 
 const Card = ({ children, className }: any) => (
   <div className={`rounded-2xl shadow-md ${className}`}>{children}</div>
@@ -27,6 +30,7 @@ const CardContent = ({ children }: any) => <div className="p-4">{children}</div>
 
 const Button = ({ children, onClick, className, disabled }: any) => (
   <button
+    type="button"
     onClick={onClick}
     disabled={disabled}
     className={`px-4 py-2 rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
@@ -35,85 +39,137 @@ const Button = ({ children, onClick, className, disabled }: any) => (
   </button>
 );
 
-type InvestmentInput = {
-  id: number;
-  name: string;
-  investmentValue: number;
-  riskFreeRate: number;
-  propertyGrowthRate: number;
-  years: number;
-  monthlyRevenue: number;
-  monthlyCosts: number;
-  taxRate: number;
-  reinvestedPercent: number;
-  acquisitionCostPercent: number;
-  exitCostPercent: number;
+type InvestmentType =
+  | "shortTermRental"
+  | "longTermRental"
+  | "assetRental"
+  | "dailyServices"
+  | "monthlyServices"
+  | "trade";
+
+type TaxMode = "rentalLumpSum" | "generalRules" | "linear";
+type ViewMode = "chart" | "table";
+
+type InflationForecastRow = {
+  year: number;
+  value: number;
 };
 
-type InvestmentRow = {
+type DefaultsResponse = {
+  inflation?: {
+    latest: number | null;
+    avg10y: number | null;
+    avg5y: number | null;
+  };
+  tax?: {
+    belka?: number | null;
+    rentalPrivateBase?: number | null;
+    rentalPrivateHigh?: number | null;
+    rentalPrivateThreshold?: number | null;
+    generalRulesBase?: number | null;
+    generalRulesHigh?: number | null;
+    generalRulesThreshold?: number | null;
+    linear?: number | null;
+    businessDefault?: number | null;
+    default?: number | null;
+  };
+};
+
+type InvestmentInput = {
+  id: number;
+  type: InvestmentType;
+  name: string;
+  taxMode: TaxMode;
+  investmentValue: number;
+  monthlyRevenue: number;
+  annualCosts: number;
+  dailyPrice: number;
+  occupancyRate: number;
+  averageRentalDays: number;
+  variableCostPerRental: number;
+  dailyCustomers: number;
+  monthlyCustomers: number;
+  averagePrice: number;
+  workingDaysPerMonth: number;
+  variableCostPerUnit: number;
+  basketValue: number;
+  marginPercent: number;
+  fixedMonthlyCosts: number;
+};
+
+type YearlyResult = {
   year: number;
-  investmentId: number;
-  investmentName: string;
-  netCashflow: number;
-  cumulativeCashflow: number;
-  assetValue: number;
-  reinvestedPortfolioValue: number;
-  reinvestedPrincipal: number;
-  reinvestmentGain: number;
-  totalGain: number;
-  finalValue: number;
-  returnPercent: number;
+  netProfit: number;
+  cumulativeNetProfit: number;
+  cumulativeReturnPercent: number;
+  revenue: number;
+  fixedCosts: number;
 };
 
 type InvestmentResult = {
   id: number;
   name: string;
-  initialOutlay: number;
-  finalValue: number;
-  totalGain: number;
-  returnPercent: number;
-  avgAnnualReturn: number;
+  type: InvestmentType;
+  finalNetProfit: number;
+  finalReturnPercent: number;
   paybackYear: number | null;
-  yearlyRows: InvestmentRow[];
+  avgAnnualReturn: number;
+  avgInflation: number;
+  monthBreakEvenPercent: number;
+  fixedCostsToRevenuePercent: number;
+  fixedCostsToGrossProfitPercent: number;
+  operatingMarginPercent: number;
+  monthlyNetProfit: number;
+  yearlyResults: YearlyResult[];
 };
 
-const investmentColors = [
-  "#00cc66",
-  "#66ccff",
-  "#ffaa00",
-  "#ff5c5c",
-  "#c084fc",
-  "#f472b6",
-];
+type TaxDefaults = {
+  rentalPrivateBase: number;
+  rentalPrivateHigh: number;
+  rentalPrivateThreshold: number;
+  generalRulesBase: number;
+  generalRulesHigh: number;
+  generalRulesThreshold: number;
+  linear: number;
+};
+
+const typeLabels: Record<InvestmentType, string> = {
+  shortTermRental: "Wynajem krótkoterminowy",
+  longTermRental: "Wynajem długoterminowy",
+  assetRental: "Wynajem różny",
+  dailyServices: "Usługi - dzienna ilość klientów",
+  monthlyServices: "Usługi - miesięczna ilość klientów",
+  trade: "Handel",
+};
+
+const chartColors = ["#00cc66", "#66ccff", "#ffaa00", "#ff5c5c", "#c084fc"];
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("pl-PL", {
     style: "currency",
     currency: "PLN",
     maximumFractionDigits: 0,
-  }).format(value);
+  }).format(Number.isFinite(value) ? value : 0);
+}
+
+function formatPercent(value: number, digits = 2): string {
+  return `${(Number.isFinite(value) ? value : 0).toFixed(digits)}%`;
 }
 
 function formatShortCurrency(value: number): string {
   return `${new Intl.NumberFormat("pl-PL", {
     notation: "compact",
     maximumFractionDigits: 1,
-  }).format(value)} zł`;
-}
-
-function formatPercent(value: number, digits = 2): string {
-  return `${value.toFixed(digits)}%`;
+  }).format(Number.isFinite(value) ? value : 0)} zł`;
 }
 
 function formatShortPercent(value: number): string {
-  return `${Number(value).toFixed(1)}%`;
+  return `${(Number.isFinite(value) ? value : 0).toFixed(1)}%`;
 }
 
 function parseLocalizedNumber(value: string): number | null {
   const cleaned = value.replace(/\s/g, "").replace(",", ".");
-  if (cleaned === "" || cleaned === "-" || cleaned === "." || cleaned === "-.") {
-    return null;
-  }
+  if (cleaned === "" || cleaned === "-" || cleaned === "." || cleaned === "-.") return null;
   const parsed = Number(cleaned);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -127,63 +183,103 @@ function formatLocalizedNumber(value: number): string {
 }
 
 function shouldShowLabel(index: number, dataLength: number) {
-  if (dataLength <= 6) return true;
-  if (dataLength <= 12) return index % 2 === 0 || index === dataLength - 1;
+  if (dataLength <= 10) return true;
+  if (dataLength <= 20) return index % 2 === 0 || index === dataLength - 1;
   return index % 5 === 0 || index === dataLength - 1;
 }
 
-function CustomBarCurrencyLabel({ x, y, width, value, index, dataLength }: any) {
-  if (value === null || value === undefined || !shouldShowLabel(index, dataLength)) return null;
+function normalizeInflationForecast(data: any): InflationForecastRow[] {
+  const source = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.forecast)
+      ? data.forecast
+      : Array.isArray(data?.data)
+        ? data.data
+        : Array.isArray(data?.values)
+          ? data.values
+          : typeof data === "object" && data !== null
+            ? Object.entries(data).map(([year, value]) => ({ year, value }))
+            : [];
 
-  return (
-    <text
-      x={x + width / 2}
-      y={y - 6}
-      fill="#f9fafb"
-      fontSize={11}
-      fontWeight={700}
-      textAnchor="middle"
-    >
-      {formatShortCurrency(Number(value))}
-    </text>
-  );
+  return source
+    .map((item: any) => {
+      const year = Number(item?.year ?? item?.date ?? item?.rok);
+      const value = Number(
+        item?.value ??
+          item?.inflation ??
+          item?.rate ??
+          item?.forecast ??
+          item?.avg ??
+          item?.[1]
+      );
+
+      return { year, value };
+    })
+    .filter((item: InflationForecastRow) => Number.isFinite(item.year) && Number.isFinite(item.value))
+    .sort((a: InflationForecastRow, b: InflationForecastRow) => a.year - b.year);
 }
 
-function CustomBarPercentLabel({ x, y, width, value, index, dataLength }: any) {
-  if (value === null || value === undefined || !shouldShowLabel(index, dataLength)) return null;
+function getAverageInflationFromForecast(years: number, fallback: number): number {
+  const currentYear = new Date().getFullYear();
+  const investmentYears = Math.max(Math.floor(years), 1);
+  const endYear = currentYear + investmentYears;
+  const forecast = normalizeInflationForecast(inflationForecastData);
 
-  return (
-    <text
-      x={x + width / 2}
-      y={y - 6}
-      fill="#f9fafb"
-      fontSize={11}
-      fontWeight={700}
-      textAnchor="middle"
-    >
-      {formatShortPercent(Number(value))}
-    </text>
+  const selected = forecast.filter(
+    (item) => item.year >= currentYear && item.year <= endYear
   );
+
+  if (!selected.length) return fallback;
+
+  const sum = selected.reduce((acc, item) => acc + item.value, 0);
+  return sum / selected.length;
 }
 
-function CustomBarYearsLabel({ x, y, width, value, index, dataLength }: any) {
-  if (value === null || value === undefined || !shouldShowLabel(index, dataLength)) return null;
+function getWorkingDaysForRisk(input: InvestmentInput): number {
+  if (
+    input.type === "assetRental" ||
+    input.type === "dailyServices" ||
+    input.type === "trade"
+  ) {
+    return Math.max(input.workingDaysPerMonth, 1);
+  }
 
-  return (
-    <text
-      x={x + width / 2}
-      y={y - 6}
-      fill="#f9fafb"
-      fontSize={11}
-      fontWeight={700}
-      textAnchor="middle"
-    >
-      {Number(value) > 0 ? `${Number(value).toFixed(0)} lat` : "—"}
-    </text>
-  );
+  return 30;
 }
 
-function CustomLineLabel({ x, y, value, index, dataLength }: any) {
+
+function riskTone(value: number, type: "breakEven" | "fixedCost" | "operatingMargin") {
+  if (!Number.isFinite(value)) {
+    return "border-green-500/35 bg-green-900/45 text-gray-100";
+  }
+
+  if (type === "operatingMargin") {
+    if (value >= 40) {
+      return "border-green-500/35 bg-green-900/45 text-green-100";
+    }
+
+    if (value >= 20) {
+      return "border-green-500/35 bg-green-900/45 text-yellow-300";
+    }
+
+    return "border-green-500/35 bg-green-900/45 text-red-300";
+  }
+
+  const greenLimit = type === "breakEven" ? 35 : 60;
+  const yellowLimit = type === "breakEven" ? 60 : 90;
+
+  if (value <= greenLimit) {
+    return "border-green-500/35 bg-green-900/45 text-green-100";
+  }
+
+  if (value <= yellowLimit) {
+    return "border-green-500/35 bg-green-900/45 text-yellow-300";
+  }
+
+  return "border-green-500/35 bg-green-900/45 text-red-300";
+}
+
+function CustomLineLabel({ x, y, value, index, dataLength, mode }: any) {
   if (value === null || value === undefined || !shouldShowLabel(index, dataLength)) return null;
 
   return (
@@ -195,37 +291,48 @@ function CustomLineLabel({ x, y, value, index, dataLength }: any) {
       fontWeight={700}
       textAnchor="middle"
     >
-      {formatShortCurrency(Number(value))}
+      {mode === "percent" ? formatShortPercent(Number(value)) : formatShortCurrency(Number(value))}
     </text>
   );
 }
 
-function CustomTooltip({ active, payload, label }: any) {
+function CustomBarLabel({ x, y, width, value, type = "amount" }: any) {
+  if (value === null || value === undefined) return null;
+
+  return (
+    <text
+      x={x + width / 2}
+      y={y - 6}
+      fill="#f9fafb"
+      fontSize={11}
+      fontWeight={700}
+      textAnchor="middle"
+    >
+      {type === "percent"
+        ? formatShortPercent(Number(value))
+        : type === "number"
+          ? String(Math.round(Number(value)))
+          : formatShortCurrency(Number(value))}
+    </text>
+  );
+}
+
+
+function CustomTooltip({ active, payload, label, mode }: any) {
   if (!active || !payload || !payload.length) return null;
 
   return (
     <div className="rounded-xl border border-green-300 bg-gray-200 px-4 py-3 text-sm font-semibold text-black shadow-xl">
-      <div className="mb-2 text-base font-bold">{label}</div>
+      <div className="mb-2 text-base font-bold">Rok {label}</div>
       <div className="flex flex-col gap-1">
-        {payload.map((item: any, index: number) => {
-          const key = String(item.dataKey);
-          const isPercent = key.includes("Percent") || key.includes("return");
-          const isYears = key.includes("payback");
-          return (
-            <div key={index} className="flex items-center justify-between gap-4">
-              <span>{item.name}</span>
-              <span className="font-bold">
-                {isYears
-                  ? Number(item.value) > 0
-                    ? `${Number(item.value).toFixed(0)} lat`
-                    : "—"
-                  : isPercent
-                    ? formatPercent(Number(item.value))
-                    : formatCurrency(Number(item.value))}
-              </span>
-            </div>
-          );
-        })}
+        {payload.map((item: any, index: number) => (
+          <div key={index} className="flex items-center justify-between gap-4">
+            <span>{item.name}</span>
+            <span className="font-bold">
+              {mode === "percent" ? formatPercent(Number(item.value)) : formatCurrency(Number(item.value))}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -233,9 +340,10 @@ function CustomTooltip({ active, payload, label }: any) {
 
 function InfoHint({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
   const wrapperRef = useRef<HTMLSpanElement | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (
         wrapperRef.current &&
@@ -250,18 +358,37 @@ function InfoHint({ text }: { text: string }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const toggleOpen = () => {
+    if (!open && wrapperRef.current) {
+      const rect = wrapperRef.current.getBoundingClientRect();
+      const tooltipWidth = 360;
+      const padding = 16;
+      const left = Math.min(
+        Math.max(rect.right - tooltipWidth, padding),
+        window.innerWidth - tooltipWidth - padding
+      );
+      const top = Math.min(rect.bottom + 8, window.innerHeight - 180);
+      setPosition({ top, left });
+    }
+
+    setOpen((prev) => !prev);
+  };
+
   return (
     <span ref={wrapperRef} className="relative inline-flex items-center">
       <button
         type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className="flex h-5 w-5 items-center justify-center rounded-full bg-[#cfe8c9] text-[12px] font-bold text-black hover:bg-[#bddbb7] transition"
+        onClick={toggleOpen}
+        className="flex h-5 w-5 items-center justify-center rounded-full bg-[#cfe8c9] text-[12px] font-bold text-black transition hover:bg-[#bddbb7]"
         aria-label="Pokaż opis"
       >
         ?
       </button>
       {open && (
-        <div className="absolute right-0 top-7 z-30 w-80 rounded-xl border border-green-700/30 bg-[#cfe8c9] px-4 py-3 text-left text-sm text-black shadow-xl leading-relaxed">
+        <div
+          className="fixed z-[9999] max-h-[70vh] w-[360px] overflow-y-auto rounded-xl border border-green-700/30 bg-[#cfe8c9] px-4 py-3 text-left text-sm text-black shadow-2xl leading-relaxed"
+          style={{ top: position.top, left: position.left }}
+        >
           {text}
         </div>
       )}
@@ -269,123 +396,222 @@ function InfoHint({ text }: { text: string }) {
   );
 }
 
-function KpiBox({ label, value, hint }: { label: string; value: string; hint: string }) {
+function createDefaultInvestment(id: number, type: InvestmentType = "dailyServices"): InvestmentInput {
+  return {
+    id,
+    type,
+    name: `Inwestycja ${id}`,
+    taxMode: type === "longTermRental" ? "rentalLumpSum" : "generalRules",
+    investmentValue: 100000,
+    monthlyRevenue: 5000,
+    annualCosts: 6000,
+    dailyPrice: 250,
+    occupancyRate: 60,
+    averageRentalDays: 2,
+    variableCostPerRental: 80,
+    dailyCustomers: 5,
+    monthlyCustomers: 100,
+    averagePrice: 150,
+    workingDaysPerMonth: 22,
+    variableCostPerUnit: 40,
+    basketValue: 120,
+    marginPercent: 35,
+    fixedMonthlyCosts: 3000,
+  };
+}
+
+function calculateTax(income: number, taxMode: TaxMode, taxDefaults: TaxDefaults): number {
+  if (income <= 0) return 0;
+
+  if (taxMode === "rentalLumpSum") {
+    const basePart = Math.min(income, taxDefaults.rentalPrivateThreshold);
+    const highPart = Math.max(income - taxDefaults.rentalPrivateThreshold, 0);
+    return basePart * (taxDefaults.rentalPrivateBase / 100) + highPart * (taxDefaults.rentalPrivateHigh / 100);
+  }
+
+  if (taxMode === "generalRules") {
+    const basePart = Math.min(income, taxDefaults.generalRulesThreshold);
+    const highPart = Math.max(income - taxDefaults.generalRulesThreshold, 0);
+    return basePart * (taxDefaults.generalRulesBase / 100) + highPart * (taxDefaults.generalRulesHigh / 100);
+  }
+
+  return income * (taxDefaults.linear / 100);
+}
+
+function calculateMonthlyModel(input: InvestmentInput) {
+  switch (input.type) {
+    case "shortTermRental": {
+      const rentedDays = 30 * (Math.max(input.occupancyRate, 0) / 100);
+      const rentalsCount = input.averageRentalDays > 0 ? rentedDays / input.averageRentalDays : 0;
+      const revenue = rentedDays * input.dailyPrice;
+      const variableCosts = rentalsCount * input.variableCostPerRental;
+      return { revenue, variableCosts, fixedCosts: input.fixedMonthlyCosts };
+    }
+
+    case "longTermRental": {
+      const revenue = input.monthlyRevenue;
+      const variableCosts = Math.max(input.annualCosts, 0) / 12;
+      return { revenue, variableCosts, fixedCosts: 0 };
+    }
+
+    case "assetRental": {
+      const rentalDays = input.dailyCustomers * input.averageRentalDays * input.workingDaysPerMonth;
+      const rentalsCount = input.dailyCustomers * input.workingDaysPerMonth;
+      const revenue = rentalDays * input.averagePrice;
+      const variableCosts = rentalsCount * input.variableCostPerRental;
+      return { revenue, variableCosts, fixedCosts: input.fixedMonthlyCosts };
+    }
+
+    case "dailyServices": {
+      const services = input.dailyCustomers * input.workingDaysPerMonth;
+      const revenue = services * input.averagePrice;
+      const variableCosts = services * input.variableCostPerUnit;
+      return { revenue, variableCosts, fixedCosts: input.fixedMonthlyCosts };
+    }
+
+    case "monthlyServices": {
+      const services = input.monthlyCustomers;
+      const revenue = services * input.averagePrice;
+      const variableCosts = services * input.variableCostPerUnit;
+      return { revenue, variableCosts, fixedCosts: input.fixedMonthlyCosts };
+    }
+
+    case "trade": {
+      const customers = input.dailyCustomers * input.workingDaysPerMonth;
+      const revenue = customers * input.basketValue;
+      const grossMargin = revenue * (Math.max(input.marginPercent, 0) / 100);
+      const variableCosts = Math.max(revenue - grossMargin, 0);
+      return { revenue, variableCosts, fixedCosts: input.fixedMonthlyCosts };
+    }
+
+    default:
+      return { revenue: 0, variableCosts: 0, fixedCosts: 0 };
+  }
+}
+
+function calculateInvestment(
+  input: InvestmentInput,
+  globalYears: number,
+  inflationAvg: number,
+  taxDefaults: TaxDefaults
+): InvestmentResult {
+  const years = Math.min(Math.max(Math.floor(globalYears), 1), 40);
+  const investmentValue = Math.max(input.investmentValue, 0);
+  const { revenue, variableCosts, fixedCosts } = calculateMonthlyModel(input);
+
+  const monthlyGrossProfitBeforeFixedCosts = revenue - variableCosts;
+  const monthlyProfitBeforeTax = revenue - variableCosts - fixedCosts;
+  const annualRevenue = revenue * 12;
+  const annualProfitBeforeTax = monthlyProfitBeforeTax * 12;
+  const annualTax = calculateTax(annualProfitBeforeTax, input.taxMode, taxDefaults);
+  const annualNetProfit = annualProfitBeforeTax - annualTax;
+  const monthlyNetProfit = annualNetProfit / 12;
+
+  const yearlyResults: YearlyResult[] = [];
+  let cumulativeNetProfit = 0;
+  const paybackYear =
+    investmentValue > 0 && annualNetProfit > 0
+      ? Math.ceil(investmentValue / annualNetProfit)
+      : null;
+
+  for (let year = 1; year <= years; year++) {
+    cumulativeNetProfit += annualNetProfit;
+
+    yearlyResults.push({
+      year,
+      netProfit: annualNetProfit,
+      cumulativeNetProfit,
+      cumulativeReturnPercent: investmentValue > 0 ? (cumulativeNetProfit / investmentValue) * 100 : 0,
+      revenue: annualRevenue,
+      fixedCosts: fixedCosts * 12,
+    });
+  }
+
+  const finalReturnPercent = investmentValue > 0 ? (cumulativeNetProfit / investmentValue) * 100 : 0;
+  const avgAnnualReturn = years > 0 ? finalReturnPercent / years : 0;
+
+  const workingDaysForRisk = getWorkingDaysForRisk(input);
+  const dailyGrossProfitBeforeFixedCosts =
+    workingDaysForRisk > 0 ? monthlyGrossProfitBeforeFixedCosts / workingDaysForRisk : 0;
+  const daysToCoverFixedCosts =
+    dailyGrossProfitBeforeFixedCosts > 0 ? fixedCosts / dailyGrossProfitBeforeFixedCosts : workingDaysForRisk;
+  const monthBreakEvenPercent =
+    workingDaysForRisk > 0
+      ? Math.min(Math.max((daysToCoverFixedCosts / workingDaysForRisk) * 100, 0), 999)
+      : 0;
+  const fixedCostsToRevenuePercent = revenue > 0 ? (fixedCosts / revenue) * 100 : 0;
+  const fixedCostsToGrossProfitPercent =
+    monthlyGrossProfitBeforeFixedCosts > 0 ? (fixedCosts / monthlyGrossProfitBeforeFixedCosts) * 100 : 999;
+  const operatingMarginPercent =
+    revenue > 0 ? (monthlyProfitBeforeTax / revenue) * 100 : 0;
+
+  return {
+    id: input.id,
+    name: input.name || `Inwestycja ${input.id}`,
+    type: input.type,
+    finalNetProfit: cumulativeNetProfit,
+    finalReturnPercent,
+    paybackYear,
+    avgAnnualReturn,
+    avgInflation: inflationAvg,
+    monthBreakEvenPercent,
+    fixedCostsToRevenuePercent,
+    fixedCostsToGrossProfitPercent,
+    operatingMarginPercent,
+    monthlyNetProfit,
+    yearlyResults,
+  };
+}
+
+function KpiValue({
+  value,
+  hint,
+  className = "border-yellow-600/30 bg-[#243424] text-yellow-400",
+}: {
+  value: string;
+  hint?: string;
+  className?: string;
+}) {
   return (
-    <div className="relative flex flex-col items-start p-4 bg-[#243424] rounded-2xl shadow-md w-full border border-yellow-600/30">
-      <div className="absolute right-3 top-3">
-        <InfoHint text={hint} />
-      </div>
-      <span className="text-sm text-gray-300 pr-8">{label}</span>
-      <span className="text-2xl font-bold text-yellow-400">{value}</span>
+    <div className={`relative min-h-[82px] rounded-2xl border p-4 shadow-md ${className}`}>
+      {hint && (
+        <div className="absolute right-3 top-3">
+          <InfoHint text={hint} />
+        </div>
+      )}
+      <div className="pr-8 text-2xl font-bold">{value}</div>
     </div>
   );
 }
 
-function createDefaultInvestment(id: number): InvestmentInput {
-  return {
-    id,
-    name: `Inwestycja ${id}`,
-    investmentValue: 500000,
-    riskFreeRate: 5,
-    propertyGrowthRate: 4.5,
-    years: 10,
-    monthlyRevenue: 3000,
-    monthlyCosts: 800,
-    taxRate: 8.5,
-    reinvestedPercent: 100,
-    acquisitionCostPercent: 3,
-    exitCostPercent: 2,
-  };
-}
-
-function calculateInvestment(input: InvestmentInput): InvestmentResult {
-  const years = Math.min(Math.max(Math.floor(input.years), 1), 40);
-  const investmentValue = Math.max(input.investmentValue, 0);
-  const acquisitionCost = investmentValue * (Math.max(input.acquisitionCostPercent, 0) / 100);
-  const initialOutlay = investmentValue + acquisitionCost;
-  const annualRevenue = input.monthlyRevenue * 12;
-  const annualCosts = input.monthlyCosts * 12;
-  const taxRate = Math.max(input.taxRate, 0) / 100;
-  const reinvestedShare = Math.min(Math.max(input.reinvestedPercent / 100, 0), 1);
-  const belkaTaxRate = 0.19;
-  const reinvestRateAfterTax = (Math.max(input.riskFreeRate, 0) / 100) * (1 - belkaTaxRate);
-  const growthRate = input.propertyGrowthRate / 100;
-  const exitCostPercent = Math.max(input.exitCostPercent, 0) / 100;
-
-  const yearlyRows: InvestmentRow[] = [];
-  let cumulativeCashflow = 0;
-  let assetValue = investmentValue;
-  let reinvestedPortfolioValue = 0;
-  let reinvestedPrincipal = 0;
-  let paybackYear: number | null = null;
-
-  for (let year = 1; year <= years; year++) {
-    const taxableProfit = annualRevenue - annualCosts;
-    const operatingTax = taxableProfit > 0 ? taxableProfit * taxRate : 0;
-    const netCashflow = taxableProfit - operatingTax;
-
-    cumulativeCashflow += netCashflow;
-    assetValue = assetValue * (1 + growthRate);
-    reinvestedPortfolioValue = reinvestedPortfolioValue * (1 + reinvestRateAfterTax);
-
-    const reinvestedAmount = netCashflow > 0 ? netCashflow * reinvestedShare : 0;
-    reinvestedPortfolioValue += reinvestedAmount;
-    reinvestedPrincipal += reinvestedAmount;
-
-    const reinvestmentGain = reinvestedPortfolioValue - reinvestedPrincipal;
-    const saleCost = assetValue * exitCostPercent;
-    const netAssetValue = assetValue - saleCost;
-    const finalValue = netAssetValue + cumulativeCashflow + reinvestmentGain;
-    const totalGain = finalValue - initialOutlay;
-    const returnPercent = initialOutlay > 0 ? (totalGain / initialOutlay) * 100 : 0;
-
-    if (paybackYear === null && totalGain >= initialOutlay) {
-      paybackYear = year;
-    }
-
-    yearlyRows.push({
-      year,
-      investmentId: input.id,
-      investmentName: input.name,
-      netCashflow,
-      cumulativeCashflow,
-      assetValue: netAssetValue,
-      reinvestedPortfolioValue,
-      reinvestedPrincipal,
-      reinvestmentGain,
-      totalGain,
-      finalValue,
-      returnPercent,
-    });
-  }
-
-  const finalRow = yearlyRows[yearlyRows.length - 1];
-  const finalValue = finalRow?.finalValue ?? initialOutlay;
-  const totalGain = finalValue - initialOutlay;
-  const returnPercent = initialOutlay > 0 ? (totalGain / initialOutlay) * 100 : 0;
-  const avgAnnualReturn =
-    initialOutlay > 0 && finalValue > 0
-      ? (Math.pow(finalValue / initialOutlay, 1 / years) - 1) * 100
-      : 0;
-
-  return {
-    id: input.id,
-    name: input.name,
-    initialOutlay,
-    finalValue,
-    totalGain,
-    returnPercent,
-    avgAnnualReturn,
-    paybackYear,
-    yearlyRows,
-  };
-}
-
-export default function PorownanieInwestycjiPremium() {
+export default function PorownanieInwestycji() {
   const reportRef = useRef<HTMLDivElement | null>(null);
-  const [investments, setInvestments] = useState<InvestmentInput[]>([createDefaultInvestment(1)]);
+  const [, startTransition] = useTransition();
+
+  const [globalYears, setGlobalYears] = useState<number>(10);
+  const [globalYearsValue, setGlobalYearsValue] = useState<string>(formatLocalizedNumber(10));
+  const [inflationAvg, setInflationAvg] = useState<number>(4);
+  const [defaultsInflationFallback, setDefaultsInflationFallback] = useState<number>(4);
+  const [taxDefaults, setTaxDefaults] = useState<TaxDefaults>({
+    rentalPrivateBase: 8.5,
+    rentalPrivateHigh: 12.5,
+    rentalPrivateThreshold: 100000,
+    generalRulesBase: 12,
+    generalRulesHigh: 32,
+    generalRulesThreshold: 120000,
+    linear: 19,
+  });
+
+  const [investments, setInvestments] = useState<InvestmentInput[]>([
+    createDefaultInvestment(1, "dailyServices"),
+  ]);
+  const [calculatedInvestments, setCalculatedInvestments] = useState<InvestmentInput[]>([
+    createDefaultInvestment(1, "dailyServices"),
+  ]);
+  const [calculatedYears, setCalculatedYears] = useState<number>(10);
+  const [calculatedInflationAvg, setCalculatedInflationAvg] = useState<number>(4);
   const [inputValues, setInputValues] = useState<Record<string, string>>(() => {
-    const first = createDefaultInvestment(1);
+    const first = createDefaultInvestment(1, "dailyServices");
     return Object.fromEntries(
       Object.entries(first).map(([key, value]) => [
         `1.${key}`,
@@ -394,129 +620,126 @@ export default function PorownanieInwestycjiPremium() {
     );
   });
   const [expandedPanels, setExpandedPanels] = useState<Record<number, boolean>>({ 1: true });
-  const [calculated, setCalculated] = useState(false);
+  const [showAddTypePicker, setShowAddTypePicker] = useState(false);
+  const [valueViewMode, setValueViewMode] = useState<ViewMode>("chart");
+  const [percentViewMode, setPercentViewMode] = useState<ViewMode>("chart");
 
-  const results = useMemo(() => investments.map(calculateInvestment), [investments]);
+  useEffect(() => {
+    window.scrollTo(0, 0);
 
-  const bestFinalValue = useMemo(() => {
-    if (!results.length) return null;
-    return results.reduce((best, item) => (item.finalValue > best.finalValue ? item : best), results[0]);
-  }, [results]);
+    async function loadDefaults() {
+      try {
+        const res = await fetch("/api/market-data/defaults");
+        const json: DefaultsResponse = await res.json();
 
-  const bestReturn = useMemo(() => {
-    if (!results.length) return null;
-    return results.reduce((best, item) => (item.returnPercent > best.returnPercent ? item : best), results[0]);
-  }, [results]);
+        const fallbackInflation = json.inflation?.avg10y ?? 4;
+        const forecastInflation = getAverageInflationFromForecast(globalYears, fallbackInflation);
 
-  const fastestPayback = useMemo(() => {
-    const withPayback = results.filter((item) => item.paybackYear !== null);
-    if (!withPayback.length) return null;
-    return withPayback.reduce((best, item) =>
-      Number(item.paybackYear) < Number(best.paybackYear) ? item : best
-    );
-  }, [results]);
+        setDefaultsInflationFallback(fallbackInflation);
+        setInflationAvg(forecastInflation);
+        setCalculatedInflationAvg(forecastInflation);
+        setTaxDefaults({
+          rentalPrivateBase: json.tax?.rentalPrivateBase ?? 8.5,
+          rentalPrivateHigh: json.tax?.rentalPrivateHigh ?? 12.5,
+          rentalPrivateThreshold: json.tax?.rentalPrivateThreshold ?? 100000,
+          generalRulesBase: json.tax?.generalRulesBase ?? 12,
+          generalRulesHigh: json.tax?.generalRulesHigh ?? 32,
+          generalRulesThreshold: json.tax?.generalRulesThreshold ?? 120000,
+          linear: json.tax?.linear ?? json.tax?.businessDefault ?? 19,
+        });
+      } catch (error) {
+        console.error("Nie udało się pobrać danych domyślnych:", error);
+      }
+    }
+
+    loadDefaults();
+  }, []);
+
+  const results = useMemo(
+    () => calculatedInvestments.map((investment) => calculateInvestment(investment, calculatedYears, calculatedInflationAvg, taxDefaults)),
+    [calculatedInvestments, calculatedYears, calculatedInflationAvg, taxDefaults]
+  );
+
+  const valueTrendData = useMemo(() => {
+    const years = Math.min(Math.max(Math.floor(calculatedYears), 1), 40);
+
+    return Array.from({ length: years }, (_, index) => {
+      const year = index + 1;
+      const row: Record<string, number | string> = { year };
+
+      results.forEach((result) => {
+        const yearly = result.yearlyResults.find((item) => item.year === year);
+        row[result.name] = yearly?.cumulativeNetProfit ?? 0;
+      });
+
+      return row;
+    });
+  }, [results, calculatedYears]);
+
+  const percentTrendData = useMemo(() => {
+    const years = Math.min(Math.max(Math.floor(calculatedYears), 1), 40);
+
+    return Array.from({ length: years }, (_, index) => {
+      const year = index + 1;
+      const row: Record<string, number | string> = { year };
+
+      results.forEach((result) => {
+        const yearly = result.yearlyResults.find((item) => item.year === year);
+        row[result.name] = yearly?.cumulativeReturnPercent ?? 0;
+      });
+
+      return row;
+    });
+  }, [results, calculatedYears]);
 
   const comparisonData = useMemo(
     () =>
       results.map((result) => ({
         name: result.name,
-        finalValue: result.finalValue,
-        returnPercent: result.returnPercent,
         paybackYear: result.paybackYear ?? 0,
         avgAnnualReturn: result.avgAnnualReturn,
+        inflation: result.avgInflation,
+        monthBreakEvenPercent: result.monthBreakEvenPercent,
+        fixedCostsToRevenuePercent: result.fixedCostsToRevenuePercent,
+        fixedCostsToGrossProfitPercent: result.fixedCostsToGrossProfitPercent,
+        operatingMarginPercent: result.operatingMarginPercent,
+        monthlyNetProfit: result.monthlyNetProfit,
       })),
     [results]
   );
 
-  const trendData = useMemo(() => {
-    const maxYears = Math.max(...results.map((result) => result.yearlyRows.length), 1);
-    return Array.from({ length: maxYears }, (_, index) => {
-      const year = index + 1;
-      const row: Record<string, number | string> = { year };
-      results.forEach((result) => {
-        const yearRow = result.yearlyRows.find((item) => item.year === year);
-        row[result.name] = yearRow?.finalValue ?? null as any;
-      });
-      return row;
-    });
-  }, [results]);
-
-  const inputConfig = [
-    {
-      key: "investmentValue",
-      label: "Wartość inwestycji / aktywa (zł)",
-      hint: "Cena lub wartość początkowa aktywa, projektu albo inwestycji.",
-    },
-    {
-      key: "riskFreeRate",
-      label: "Stopa wolna od ryzyka (%)",
-      hint: "Stopa używana do oprocentowania reinwestowanych przepływów. W modelu zysk z reinwestycji liczony jest po podatku Belki 19%.",
-    },
-    {
-      key: "propertyGrowthRate",
-      label: "Roczna zmiana wartości aktywa (%)",
-      hint: "Zakładany średnioroczny wzrost lub spadek wartości inwestycji.",
-    },
-    {
-      key: "years",
-      label: "Okres inwestycji (lata)",
-      hint: "Okres analizy. Maksymalnie 40 lat dla czytelności wykresów.",
-    },
-    {
-      key: "monthlyRevenue",
-      label: "Przychody miesięczne (zł)",
-      hint: "Średnie miesięczne wpływy generowane przez inwestycję.",
-    },
-    {
-      key: "monthlyCosts",
-      label: "Koszty miesięczne (zł)",
-      hint: "Średnie miesięczne koszty operacyjne związane z inwestycją.",
-    },
-    {
-      key: "taxRate",
-      label: "Podatek od dochodu operacyjnego (%)",
-      hint: "Stawka podatku od dodatniego wyniku operacyjnego: przychody minus koszty.",
-    },
-    {
-      key: "reinvestedPercent",
-      label: "Procent reinwestowanych przepływów (%)",
-      hint: "Część dodatnich przepływów, która ma być reinwestowana według stopy wolnej od ryzyka po podatku Belki.",
-    },
-    {
-      key: "acquisitionCostPercent",
-      label: "Koszty wejścia / zakupu (%)",
-      hint: "Dodatkowe koszty ponoszone na starcie, np. prowizja, PCC, notariusz, opłata przygotowawcza, koszty transakcyjne.",
-    },
-    {
-      key: "exitCostPercent",
-      label: "Koszty wyjścia / sprzedaży (%)",
-      hint: "Koszty ponoszone przy zakończeniu inwestycji, np. prowizja sprzedaży, opłaty, koszty transakcyjne.",
-    },
-  ] as const;
-
   const updateInvestment = (id: number, key: keyof InvestmentInput, value: string) => {
     setInputValues((prev) => ({ ...prev, [`${id}.${key}`]: value }));
 
-    setInvestments((prev) =>
-      prev.map((investment) => {
-        if (investment.id !== id) return investment;
+    startTransition(() => {
+      setInvestments((prev) =>
+        prev.map((investment) => {
+          if (investment.id !== id) return investment;
 
-        if (key === "name") {
-          return { ...investment, name: value };
-        }
+          if (key === "name") return { ...investment, name: value };
+          if (key === "type") {
+            const nextType = value as InvestmentType;
+            return {
+              ...investment,
+              type: nextType,
+              taxMode: nextType === "longTermRental" ? "rentalLumpSum" : "generalRules",
+            };
+          }
+          if (key === "taxMode") return { ...investment, taxMode: value as TaxMode };
 
-        const parsed = parseLocalizedNumber(value);
-        return { ...investment, [key]: parsed ?? 0 };
-      })
-    );
-
-    setCalculated(false);
+          const parsed = parseLocalizedNumber(value);
+          return { ...investment, [key]: parsed ?? 0 };
+        })
+      );
+    });
   };
 
   const handleBlur = (id: number, key: keyof InvestmentInput) => {
-    if (key === "name") return;
+    if (key === "name" || key === "type" || key === "taxMode") return;
+
     const investment = investments.find((item) => item.id === id);
     if (!investment) return;
+
     const currentValue = investment[key];
     if (typeof currentValue !== "number") return;
 
@@ -526,11 +749,11 @@ export default function PorownanieInwestycjiPremium() {
     }));
   };
 
-  const addInvestment = () => {
+  const addInvestment = (type: InvestmentType) => {
     if (investments.length >= MAX_INVESTMENTS) return;
 
     const nextId = Math.max(...investments.map((item) => item.id)) + 1;
-    const newInvestment = createDefaultInvestment(nextId);
+    const newInvestment = createDefaultInvestment(nextId, type);
 
     setInvestments((prev) => [...prev, newInvestment]);
     setExpandedPanels((prev) => ({ ...prev, [nextId]: true }));
@@ -543,17 +766,36 @@ export default function PorownanieInwestycjiPremium() {
         ])
       ),
     }));
-    setCalculated(false);
+    setShowAddTypePicker(false);
   };
 
   const removeInvestment = (id: number) => {
     if (investments.length === 1) return;
     setInvestments((prev) => prev.filter((item) => item.id !== id));
-    setCalculated(false);
   };
 
-  const togglePanel = (id: number) => {
-    setExpandedPanels((prev) => ({ ...prev, [id]: !prev[id] }));
+  const handleGlobalYearsChange = (value: string) => {
+    setGlobalYearsValue(value);
+    const parsed = parseLocalizedNumber(value);
+    setGlobalYears(parsed ?? 0);
+  };
+
+  const handleGlobalYearsBlur = () => {
+    setGlobalYearsValue(formatLocalizedNumber(globalYears));
+  };
+
+  const handleCalculate = () => {
+    const normalizedYears = Math.min(Math.max(Math.floor(globalYears), 1), 40);
+    const forecastInflation = getAverageInflationFromForecast(normalizedYears, defaultsInflationFallback);
+
+    setCalculatedYears(normalizedYears);
+    setCalculatedInflationAvg(forecastInflation);
+    setInflationAvg(forecastInflation);
+    setCalculatedInvestments(
+      investments.map((investment) => ({
+        ...investment,
+      }))
+    );
   };
 
   const handleDownloadPdf = async () => {
@@ -587,11 +829,280 @@ export default function PorownanieInwestycjiPremium() {
       heightLeft -= pageHeight;
     }
 
-    pdf.save("porownanie-inwestycji-premium-fincalc-pro.pdf");
+    pdf.save("porownanie-inwestycji-fincalc-pro.pdf");
   };
 
+  const baseInput = (
+    investment: InvestmentInput,
+    key: keyof InvestmentInput,
+    label: string,
+    hint: string
+  ) => (
+    <div className="relative pt-1">
+      <div className="absolute right-2 -top-[3px]">
+        <InfoHint text={hint} />
+      </div>
+      <label className="block pr-10 text-sm leading-tight text-yellow-200">{label}</label>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={inputValues[`${investment.id}.${key}`] ?? ""}
+        onChange={(e) => updateInvestment(investment.id, key, e.target.value)}
+        onBlur={() => handleBlur(investment.id, key)}
+        className="mt-1 w-full rounded-md border border-yellow-700/25 bg-[#eef1f4] px-3 py-1.5 text-lg font-semibold text-black"
+      />
+    </div>
+  );
+
+  const renderFields = (investment: InvestmentInput) => {
+    const commonNameAndValue = (
+      <>
+        <div className="relative pt-1">
+          <label className="block text-sm leading-tight text-yellow-200">Nazwa inwestycji</label>
+          <input
+            type="text"
+            value={inputValues[`${investment.id}.name`] ?? investment.name}
+            onChange={(e) => updateInvestment(investment.id, "name", e.target.value)}
+            className="mt-1 w-full rounded-md border border-yellow-700/25 bg-[#eef1f4] px-3 py-1.5 text-lg font-semibold text-black"
+          />
+        </div>
+
+        {baseInput(
+          investment,
+          "investmentValue",
+          "Wartość początkowa inwestycji (zł)",
+          "Kapitał początkowy potrzebny do uruchomienia inwestycji."
+        )}
+      </>
+    );
+
+    const taxSelect = (
+      <div className="relative pt-1">
+        <div className="absolute right-2 -top-[3px]">
+          <InfoHint text="Podatek liczony jest w tle na podstawie stawek zapisanych w /api/market-data/defaults." />
+        </div>
+        <label className="block pr-10 text-sm leading-tight text-yellow-200">Rodzaj opodatkowania</label>
+        <select
+          value={investment.taxMode}
+          onChange={(e) => updateInvestment(investment.id, "taxMode", e.target.value)}
+          className="mt-1 w-full rounded-md border border-yellow-700/25 bg-[#eef1f4] px-3 py-1.5 text-lg font-semibold text-black"
+        >
+          <option value="rentalLumpSum">Ryczałt 8,5% / 12,5%</option>
+          <option value="generalRules">Zasady ogólne 12% / 32%</option>
+          <option value="linear">Liniowy 19%</option>
+        </select>
+      </div>
+    );
+
+    if (investment.type === "shortTermRental") {
+      return (
+        <>
+          {commonNameAndValue}
+          {baseInput(investment, "dailyPrice", "Średnia cena najmu na dobę", "Średnia cena brutto za jedną dobę najmu.")}
+          {baseInput(investment, "occupancyRate", "Współczynnik obłożenia w miesiącu (%)", "Jaki procent miesiąca lokal jest wynajęty.")}
+          {baseInput(investment, "averageRentalDays", "Średnia ilość dób jednego wynajmu", "Średni czas trwania jednej rezerwacji.")}
+          {baseInput(investment, "variableCostPerRental", "Koszty zmienne zależne od ilości wynajmów", "Koszt sprzątania, serwisu lub obsługi jednej rezerwacji.")}
+          {baseInput(investment, "fixedMonthlyCosts", "Koszty stałe miesięczne", "Koszty niezależne od liczby rezerwacji.")}
+          {taxSelect}
+        </>
+      );
+    }
+
+    if (investment.type === "longTermRental") {
+      return (
+        <>
+          {commonNameAndValue}
+          {baseInput(investment, "monthlyRevenue", "Przychody miesięczne z najmu", "Miesięczny czynsz lub średni przychód z najmu.")}
+          {baseInput(investment, "annualCosts", "Koszty roczne", "Roczne koszty utrzymania, remontów, ubezpieczenia i administracji.")}
+          {taxSelect}
+        </>
+      );
+    }
+
+    if (investment.type === "assetRental") {
+      return (
+        <>
+          {commonNameAndValue}
+          {baseInput(investment, "dailyCustomers", "Dzienna ilość klientów", "Średnia liczba klientów dziennie.")}
+          {baseInput(investment, "averagePrice", "Średnia cena wynajmu", "Cena za jedną dobę wynajmu.")}
+          {baseInput(investment, "averageRentalDays", "Średnia ilość dób jednego wynajmu", "Średni czas trwania wynajmu.")}
+          {baseInput(investment, "variableCostPerRental", "Koszty zmienne zależne od ilości wynajmów", "Serwis, przygotowanie, obsługa jednego wynajmu.")}
+          {baseInput(investment, "workingDaysPerMonth", "Średnia ilość dni pracujących w miesiącu", "Ile dni w miesiącu inwestycja aktywnie pracuje.")}
+          {baseInput(investment, "fixedMonthlyCosts", "Koszty stałe miesięczne", "Stałe koszty utrzymania aktywa.")}
+          {taxSelect}
+        </>
+      );
+    }
+
+    if (investment.type === "dailyServices") {
+      return (
+        <>
+          {commonNameAndValue}
+          {baseInput(investment, "dailyCustomers", "Dzienna ilość usług", "Średnia liczba wykonanych usług dziennie.")}
+          {baseInput(investment, "averagePrice", "Średnia cena usługi", "Średnia cena sprzedaży jednej usługi.")}
+          {baseInput(investment, "workingDaysPerMonth", "Średnia ilość dni pracujących w miesiącu", "Ile dni w miesiącu usługa jest sprzedawana.")}
+          {baseInput(investment, "variableCostPerUnit", "Średni koszt zmienny dla usługi", "Koszt materiałów, prowizji lub obsługi jednej usługi.")}
+          {baseInput(investment, "fixedMonthlyCosts", "Koszty stałe miesięczne", "Stałe koszty miesięczne działalności.")}
+          {taxSelect}
+        </>
+      );
+    }
+
+    if (investment.type === "monthlyServices") {
+      return (
+        <>
+          {commonNameAndValue}
+          {baseInput(investment, "monthlyCustomers", "Miesięczna ilość usług", "Liczba usług sprzedawanych miesięcznie.")}
+          {baseInput(investment, "averagePrice", "Średnia cena usługi", "Średnia cena sprzedaży jednej usługi.")}
+          {baseInput(investment, "variableCostPerUnit", "Średni koszt zmienny dla usługi", "Koszt materiałów, prowizji lub obsługi jednej usługi.")}
+          {baseInput(investment, "fixedMonthlyCosts", "Koszty stałe miesięczne", "Stałe koszty miesięczne działalności.")}
+          {taxSelect}
+        </>
+      );
+    }
+
+    return (
+      <>
+        {commonNameAndValue}
+        {baseInput(investment, "dailyCustomers", "Dzienna ilość klientów", "Średnia liczba klientów dziennie.")}
+        {baseInput(investment, "basketValue", "Średnia wartość koszyka", "Średnia wartość jednej transakcji.")}
+        {baseInput(investment, "marginPercent", "Średnia marża (%)", "Marża brutto na sprzedaży.")}
+        {baseInput(investment, "workingDaysPerMonth", "Średnia ilość dni pracujących w miesiącu", "Ile dni w miesiącu sklep prowadzi sprzedaż.")}
+        {baseInput(investment, "fixedMonthlyCosts", "Koszty stałe miesięczne", "Stałe koszty miesięczne działalności.")}
+        {taxSelect}
+      </>
+    );
+  };
+
+  const renderMetricRow = (
+    label: string,
+    hint: string,
+    renderValue: (result: InvestmentResult) => string,
+    riskType?: "breakEven" | "fixedCost" | "operatingMargin"
+  ) => (
+    <div className="mb-5">
+      <div className="mb-2 flex items-center gap-2 text-sm font-bold text-yellow-300">
+        {label}
+        <InfoHint text={hint} />
+      </div>
+      <div
+        className="grid gap-3"
+        style={{ gridTemplateColumns: `repeat(${results.length}, minmax(180px, 1fr))` }}
+      >
+        {results.map((result) => {
+          const riskValue = riskType === "breakEven"
+            ? result.monthBreakEvenPercent
+            : riskType === "fixedCost"
+              ? result.fixedCostsToGrossProfitPercent
+              : riskType === "operatingMargin"
+                ? result.operatingMarginPercent
+                : null;
+
+          return (
+            <KpiValue
+              key={`${result.id}-${label}`}
+              value={renderValue(result)}
+              className={
+                riskType && riskValue !== null
+                  ? riskTone(riskValue, riskType)
+                  : "border-yellow-600/30 bg-[#243424] text-yellow-400"
+              }
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+
+
+
+  const renderSingleMetricBarChart = (
+    title: string,
+    dataKey: string,
+    barName: string,
+    valueType: "amount" | "percent" | "number"
+  ) => (
+    <Card className="rounded-2xl border border-yellow-600/30 bg-[#3c2a20] p-6">
+      <CardContent>
+        <h3 className="mb-4 text-lg font-semibold text-yellow-300">{title}</h3>
+        <ResponsiveContainer width="100%" height={340}>
+          <BarChart data={comparisonData} margin={{ top: 34, right: 20, left: 0, bottom: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#ffaa00" />
+            <XAxis dataKey="name" stroke="#fff" tick={{ fill: "#fff", fontSize: 12 }} />
+            <YAxis
+              stroke="#fff"
+              tick={{ fill: "#fff", fontSize: 12 }}
+              tickFormatter={(value) =>
+                valueType === "percent"
+                  ? `${Number(value).toFixed(0)}%`
+                  : valueType === "number"
+                    ? String(Math.round(Number(value)))
+                    : formatShortCurrency(Number(value))
+              }
+            />
+            <Legend iconType="circle" iconSize={8} wrapperStyle={{ color: "#fff", fontSize: 12 }} />
+            <Bar
+              dataKey={dataKey}
+              fill="#66ccff"
+              name={barName}
+              maxBarSize={56}
+              legendType="circle"
+            >
+              <LabelList
+                content={(props) => <CustomBarLabel {...props} type={valueType} />}
+              />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  );
+
+  const renderReturnVsInflationChart = () => (
+    <Card className="rounded-2xl border border-yellow-600/30 bg-[#3c2a20] p-6">
+      <CardContent>
+        <h3 className="mb-4 text-lg font-semibold text-yellow-300">
+          Średnia roczna stopa zwrotu vs inflacja
+        </h3>
+        <ResponsiveContainer width="100%" height={340}>
+          <ComposedChart data={comparisonData} margin={{ top: 34, right: 28, left: 24, bottom: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#ffaa00" />
+            <XAxis dataKey="name" stroke="#fff" tick={{ fill: "#fff", fontSize: 12 }} />
+            <YAxis
+              stroke="#fff"
+              tick={{ fill: "#fff", fontSize: 12 }}
+              tickFormatter={(value) => `${Number(value).toFixed(0)}%`}
+            />
+            <Legend iconType="circle" iconSize={8} wrapperStyle={{ color: "#fff", fontSize: 12 }} />
+            <Bar
+              dataKey="avgAnnualReturn"
+              fill="#66ccff"
+              name="Średnia roczna stopa zwrotu"
+              maxBarSize={56}
+              legendType="circle"
+            >
+              <LabelList content={(props) => <CustomBarLabel {...props} type="percent" />} />
+            </Bar>
+            <ReferenceLine
+              y={calculatedInflationAvg}
+              stroke="#ff6b6b"
+              strokeWidth={2}
+              label={{
+                value: `Inflacja ${formatPercent(calculatedInflationAvg)}`,
+                position: "left",
+                fill: "#ffb4b4",
+                fontSize: 12,
+                fontWeight: 700,
+              }}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  );
+
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-6">
+    <div className="min-h-screen bg-gray-900 p-6 text-white">
       <div ref={reportRef}>
         <div className="relative mb-6">
           <motion.div
@@ -602,65 +1113,74 @@ export default function PorownanieInwestycjiPremium() {
             <div className="mb-3 inline-flex items-center rounded-full border border-yellow-600/40 bg-yellow-400/10 px-4 py-1 text-sm font-semibold text-yellow-300">
               Kalkulator premium dla inwestora
             </div>
-            <h1 className="text-3xl md:text-4xl font-bold text-yellow-400 flex items-center justify-center gap-2">
-              Porównanie do 6 inwestycji
-              <InfoHint text="Model pozwala zestawić kilka inwestycji według tych samych parametrów: wartość końcowa, stopa zwrotu, okres zwrotu oraz trend wartości w czasie." />
+            <h1 className="text-3xl font-bold text-yellow-400 md:text-4xl">
+              Porównanie inwestycji operacyjnych
             </h1>
             <p className="mx-auto mt-4 max-w-3xl text-gray-300 leading-relaxed">
-              Zmieniaj parametry każdej inwestycji, dodawaj kolejne warianty i porównuj, który projekt daje najlepszy wynik finansowy w czasie.
+              Porównaj do pięciu inwestycji według jednego okresu analizy, zysku netto,
+              stopy zwrotu, okresu zwrotu i ryzyka kosztowego.
             </p>
           </motion.div>
 
           <button
             type="button"
             onClick={handleDownloadPdf}
-            className="absolute right-0 top-0 hidden md:flex items-center gap-2 rounded-lg bg-gray-600 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-500 transition"
+            className="absolute right-0 top-0 hidden items-center gap-2 rounded-lg bg-gray-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-500 md:flex"
           >
             <span className="text-xs font-bold">PDF</span>
             <span>Eksport</span>
           </button>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_1.85fr] gap-6">
-          <Card className="bg-[#34241b] rounded-2xl p-6 shadow-lg border border-yellow-600/30">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.05fr_1.95fr]">
+          <Card className="rounded-2xl border border-yellow-600/30 bg-[#34241b] p-6 shadow-lg">
             <CardContent>
-              <div className="mb-5 flex items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-xl font-bold text-yellow-300">Dane inwestycji</h2>
-                  <p className="text-sm text-gray-300">
-                    Dodaj od 1 do 6 wariantów inwestycyjnych.
-                  </p>
+              <div className="mb-5 rounded-2xl border border-yellow-600/30 bg-gray-900/25 p-4">
+                <div className="relative pt-1">
+                  <div className="absolute right-2 -top-[3px]">
+                    <InfoHint text="Wspólny okres dla wszystkich inwestycji. Dzięki temu wyniki są porównywalne." />
+                  </div>
+                  <label className="block pr-10 text-sm leading-tight text-yellow-200">
+                    Okres inwestycji dla porównania (lata)
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={globalYearsValue}
+                    onChange={(e) => handleGlobalYearsChange(e.target.value)}
+                    onBlur={handleGlobalYearsBlur}
+                    className="mt-1 w-full rounded-md border border-yellow-700/25 bg-[#eef1f4] px-3 py-1.5 text-lg font-semibold text-black"
+                  />
                 </div>
-                <Button
-                  onClick={addInvestment}
-                  disabled={investments.length >= MAX_INVESTMENTS}
-                  className="bg-green-600 hover:bg-green-700 text-white"
-                >
-                  + Dodaj
-                </Button>
               </div>
 
               <div className="flex flex-col gap-4">
-                {investments.map((investment, investmentIndex) => (
+                {investments.map((investment, index) => (
                   <div
                     key={investment.id}
-                    className="rounded-2xl border border-yellow-600/30 bg-gray-900/25 overflow-hidden"
+                    className="overflow-hidden rounded-2xl border border-yellow-600/30 bg-gray-900/25"
                   >
-                    <div className="flex items-center justify-between gap-3 px-4 py-3 bg-[#243424]">
+                    <div className="flex items-center justify-between gap-3 bg-[#243424] px-4 py-3">
                       <button
                         type="button"
-                        onClick={() => togglePanel(investment.id)}
+                        onClick={() =>
+                          setExpandedPanels((prev) => ({
+                            ...prev,
+                            [investment.id]: !prev[investment.id],
+                          }))
+                        }
                         className="flex items-center gap-3 text-left"
                       >
                         <span
                           className="flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold text-black"
-                          style={{ backgroundColor: investmentColors[investmentIndex] }}
+                          style={{ backgroundColor: chartColors[index] }}
                         >
-                          {investmentIndex + 1}
+                          {index + 1}
                         </span>
                         <span>
-                          <span className="block text-sm text-gray-300">Wariant</span>
+                          <span className="block text-sm text-gray-300">Inwestycja {index + 1}</span>
                           <span className="block font-bold text-yellow-300">{investment.name}</span>
+                          <span className="block text-xs text-gray-300">{typeLabels[investment.type]}</span>
                         </span>
                       </button>
 
@@ -669,15 +1189,20 @@ export default function PorownanieInwestycjiPremium() {
                           <button
                             type="button"
                             onClick={() => removeInvestment(investment.id)}
-                            className="rounded-lg border border-red-400/40 px-3 py-1 text-sm font-semibold text-red-200 hover:bg-red-400/10 transition"
+                            className="rounded-lg border border-red-400/40 px-3 py-1 text-sm font-semibold text-red-200 transition hover:bg-red-400/10"
                           >
                             Usuń
                           </button>
                         )}
                         <button
                           type="button"
-                          onClick={() => togglePanel(investment.id)}
-                          className="rounded-lg bg-gray-600 px-3 py-1 text-sm font-semibold text-white hover:bg-gray-500 transition"
+                          onClick={() =>
+                            setExpandedPanels((prev) => ({
+                              ...prev,
+                              [investment.id]: !prev[investment.id],
+                            }))
+                          }
+                          className="rounded-lg bg-gray-600 px-3 py-1 text-sm font-semibold text-white transition hover:bg-gray-500"
                         >
                           {expandedPanels[investment.id] ? "Zwiń" : "Rozwiń"}
                         </button>
@@ -685,247 +1210,305 @@ export default function PorownanieInwestycjiPremium() {
                     </div>
 
                     {expandedPanels[investment.id] && (
-                      <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="relative pt-1 md:col-span-2">
-                          <label className="text-sm text-yellow-200 leading-tight">
-                            Nazwa inwestycji
-                          </label>
-                          <input
-                            type="text"
-                            value={investment.name}
-                            onChange={(e) => updateInvestment(investment.id, "name", e.target.value)}
-                            className="mt-1 w-full px-3 py-1.5 border border-yellow-700/25 rounded-md bg-[#eef1f4] text-black text-lg font-semibold"
-                          />
-                        </div>
-
-                        {inputConfig.map((field) => (
-                          <div key={field.key} className="relative pt-1">
-                            <div className="absolute right-2 -top-[3px]">
-                              <InfoHint text={field.hint} />
-                            </div>
-                            <label className="text-sm text-yellow-200 pr-8 leading-tight block">
-                              {field.label}
-                            </label>
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={inputValues[`${investment.id}.${field.key}`] ?? ""}
-                              onChange={(e) =>
-                                updateInvestment(
-                                  investment.id,
-                                  field.key as keyof InvestmentInput,
-                                  e.target.value
-                                )
-                              }
-                              onBlur={() => handleBlur(investment.id, field.key as keyof InvestmentInput)}
-                              className={`mt-1 w-full px-3 py-1.5 border border-yellow-700/25 rounded-md text-black text-lg font-semibold ${
-                                ["riskFreeRate", "propertyGrowthRate", "taxRate"].includes(field.key)
-                                  ? "bg-[#b8c1cc]"
-                                  : "bg-[#eef1f4]"
-                              }`}
-                            />
-                          </div>
-                        ))}
+                      <div className="grid grid-cols-1 gap-4 p-4">
+                        {renderFields(investment)}
                       </div>
                     )}
                   </div>
                 ))}
               </div>
 
-              <Button
-                onClick={() => setCalculated(true)}
-                className="mt-5 bg-green-600 hover:bg-green-700 w-full"
-              >
-                Porównaj inwestycje
-              </Button>
+              <div className="mt-5">
+                {showAddTypePicker && (
+                  <div className="mb-4 rounded-2xl border border-yellow-600/30 bg-gray-900/25 p-4">
+                    <div className="mb-3 text-sm font-bold text-yellow-300">Wybierz rodzaj inwestycji</div>
+                    <div className="grid grid-cols-1 gap-2">
+                      {(Object.keys(typeLabels) as InvestmentType[]).map((type) => (
+                        <button
+                          key={type}
+                          type="button"
+                          onClick={() => addInvestment(type)}
+                          className="rounded-lg border border-green-400/40 px-4 py-2 text-left font-semibold text-green-100 transition hover:bg-green-400/10"
+                        >
+                          {typeLabels[type]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <Button
+                  onClick={() => setShowAddTypePicker((prev) => !prev)}
+                  disabled={investments.length >= MAX_INVESTMENTS}
+                  className="w-full bg-gray-600 text-white hover:bg-gray-500"
+                >
+                  + Dodaj inwestycję
+                </Button>
+
+                <Button onClick={handleCalculate} className="mt-4 w-full bg-green-600 hover:bg-green-700">
+                  Odśwież wyniki
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
           <div className="flex flex-col gap-6">
-            {calculated && (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <KpiBox
-                    label="Najwyższa wartość końcowa"
-                    value={bestFinalValue ? `${bestFinalValue.name}: ${formatCurrency(bestFinalValue.finalValue)}` : "—"}
-                    hint="Inwestycja z najwyższą końcową wartością modelową po uwzględnieniu przepływów, wzrostu wartości aktywa, reinwestycji oraz kosztów wyjścia."
-                  />
-                  <KpiBox
-                    label="Najwyższa stopa zwrotu"
-                    value={bestReturn ? `${bestReturn.name}: ${formatPercent(bestReturn.returnPercent)}` : "—"}
-                    hint="Inwestycja z najwyższym całkowitym wynikiem procentowym względem nakładu początkowego wraz z kosztami wejścia."
-                  />
-                  <KpiBox
-                    label="Najszybszy okres zwrotu"
-                    value={fastestPayback ? `${fastestPayback.name}: ${fastestPayback.paybackYear} lat` : "Brak zwrotu"}
-                    hint="Pierwszy rok, w którym zysk modelowy osiąga lub przekracza początkowy nakład inwestycyjny."
-                  />
+            <Card className="rounded-2xl border border-yellow-600/30 bg-[#3c2a20] p-6">
+              <CardContent>
+                <h3 className="mb-4 text-lg font-semibold text-yellow-300">Porównanie wyników inwestycji</h3>
+
+                <div className="overflow-x-auto">
+                  <div className="min-w-[820px]">
+                    <div
+                      className="mb-5 grid gap-3"
+                      style={{ gridTemplateColumns: `repeat(${results.length}, minmax(180px, 1fr))` }}
+                    >
+                      {results.map((result) => (
+                        <div
+                          key={result.id}
+                          className="rounded-2xl border border-yellow-600/30 bg-gray-900/40 p-4 font-bold text-yellow-300"
+                        >
+                          {result.name}
+                        </div>
+                      ))}
+                    </div>
+
+                    {renderMetricRow(
+                      "Zysk netto na koniec okresu",
+                      "Suma zysków netto po podatku w całym okresie analizy.",
+                      (result) => formatCurrency(result.finalNetProfit)
+                    )}
+
+                    {renderMetricRow(
+                      "% Stopa zwrotu z inwestycji na koniec okresu",
+                      "Zysk netto z całego okresu podzielony przez wartość inwestycji.",
+                      (result) => formatPercent(result.finalReturnPercent)
+                    )}
+
+                    {renderMetricRow(
+                      "Okres zwrotu (lata)",
+                      "Liczba lat potrzebna do odzyskania wartości początkowej inwestycji. Liczona niezależnie od okresu wybranego przez użytkownika.",
+                      (result) => (result.paybackYear ? String(result.paybackYear) : "—")
+                    )}
+
+                    {renderMetricRow(
+                      "Średnia roczna stopa zwrotu / inflacja",
+                      "Średnia roczna stopa zwrotu liczona jako łączna stopa zwrotu podzielona przez okres inwestycji, zestawiona ze średnią inflacją z pliku inflation-forecast.json.",
+                      (result) => `${formatPercent(result.avgAnnualReturn)} / ${formatPercent(result.avgInflation)}`
+                    )}
+
+                    {renderMetricRow(
+                      "Zysk netto miesięczny",
+                      "Średni miesięczny zysk netto po podatku.",
+                      (result) => formatCurrency(result.monthlyNetProfit)
+                    )}
+
+                    {renderMetricRow(
+                      "% miesiąca, po którym zysk pokrywa koszty stałe",
+                      "Koszty stałe podzielone przez dzienny zysk po kosztach zmiennych, a następnie odniesione do liczby dni pracujących w miesiącu.",
+                      (result) => formatPercent(result.monthBreakEvenPercent),
+                      "breakEven"
+                    )}
+
+
+                    {renderMetricRow(
+                      "Marża operacyjna",
+                      "Zysk operacyjny przed podatkiem podzielony przez przychody.",
+                      (result) => formatPercent(result.operatingMarginPercent),
+                      "operatingMargin"
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-2xl border border-yellow-600/30 bg-[#3c2a20] p-6">
+              <CardContent>
+                <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <h3 className="text-lg font-semibold text-yellow-300">
+                    Wartość inwestycji narastająco
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setValueViewMode((prev) => (prev === "chart" ? "table" : "chart"))}
+                    className="rounded-lg bg-gray-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-500"
+                  >
+                    {valueViewMode === "chart" ? "Tabela" : "Wykres"}
+                  </button>
                 </div>
 
-                <Card className="bg-[#3c2a20] rounded-2xl p-6 border border-yellow-600/30">
-                  <CardContent>
-                    <h3 className="text-lg font-semibold text-yellow-300 mb-4">
-                      Porównanie wartości końcowej inwestycji
-                    </h3>
-                    <ResponsiveContainer width="100%" height={330}>
-                      <BarChart data={comparisonData} margin={{ top: 34, right: 20, left: 0, bottom: 8 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#ffaa00" />
-                        <Tooltip content={<CustomTooltip />} />
-                        <XAxis dataKey="name" stroke="#fff" tick={{ fill: "#fff", fontSize: 12 }} />
-                        <YAxis stroke="#fff" tick={{ fill: "#fff", fontSize: 12 }} />
-                        <Legend wrapperStyle={{ color: "#fff", fontSize: 12 }} />
-                        <Bar dataKey="finalValue" fill="#66ccff" name="Wartość końcowa">
+                {valueViewMode === "chart" ? (
+                  <ResponsiveContainer width="100%" height={380}>
+                    <LineChart data={valueTrendData} margin={{ top: 34, right: 28, left: 0, bottom: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#ffaa00" />
+                      <Tooltip content={<CustomTooltip mode="amount" />} />
+                      <XAxis dataKey="year" stroke="#fff" tick={{ fill: "#fff", fontSize: 12 }} />
+                      <YAxis
+                        stroke="#fff"
+                        tick={{ fill: "#fff", fontSize: 12 }}
+                        tickFormatter={(value) => formatShortCurrency(Number(value))}
+                      />
+                      <Legend iconType="circle" iconSize={8} wrapperStyle={{ color: "#fff", fontSize: 12 }} />
+                      {results.map((result, index) => (
+                        <Line
+                          key={result.id}
+                          type="monotone"
+                          dataKey={result.name}
+                          stroke={chartColors[index]}
+                          strokeWidth={2}
+                          name={result.name}
+                          dot={{ r: 3 }}
+                          activeDot={{ r: 6, fill: "#e5e7eb", stroke: "#86efac", strokeWidth: 2 }}
+                          legendType="circle"
+                        >
                           <LabelList
                             content={(props) => (
-                              <CustomBarCurrencyLabel {...props} dataLength={comparisonData.length} />
+                              <CustomLineLabel {...props} dataLength={valueTrendData.length} mode="amount" />
                             )}
                           />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-[#3c2a20] rounded-2xl p-6 border border-yellow-600/30">
-                  <CardContent>
-                    <h3 className="text-lg font-semibold text-yellow-300 mb-4">
-                      Porównanie wyniku procentowego
-                    </h3>
-                    <ResponsiveContainer width="100%" height={330}>
-                      <BarChart data={comparisonData} margin={{ top: 34, right: 20, left: 0, bottom: 8 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#ffaa00" />
-                        <Tooltip content={<CustomTooltip />} />
-                        <XAxis dataKey="name" stroke="#fff" tick={{ fill: "#fff", fontSize: 12 }} />
-                        <YAxis stroke="#fff" tick={{ fill: "#fff", fontSize: 12 }} />
-                        <Legend wrapperStyle={{ color: "#fff", fontSize: 12 }} />
-                        <Bar dataKey="returnPercent" fill="#00cc66" name="Całkowita stopa zwrotu">
-                          <LabelList
-                            content={(props) => (
-                              <CustomBarPercentLabel {...props} dataLength={comparisonData.length} />
-                            )}
-                          />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-[#3c2a20] rounded-2xl p-6 border border-yellow-600/30">
-                  <CardContent>
-                    <h3 className="text-lg font-semibold text-yellow-300 mb-4">
-                      Porównanie okresu zwrotu
-                    </h3>
-                    <ResponsiveContainer width="100%" height={330}>
-                      <BarChart data={comparisonData} margin={{ top: 34, right: 20, left: 0, bottom: 8 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#ffaa00" />
-                        <Tooltip content={<CustomTooltip />} />
-                        <XAxis dataKey="name" stroke="#fff" tick={{ fill: "#fff", fontSize: 12 }} />
-                        <YAxis stroke="#fff" tick={{ fill: "#fff", fontSize: 12 }} />
-                        <Legend wrapperStyle={{ color: "#fff", fontSize: 12 }} />
-                        <Bar dataKey="paybackYear" fill="#ffaa00" name="Okres zwrotu">
-                          <LabelList
-                            content={(props) => (
-                              <CustomBarYearsLabel {...props} dataLength={comparisonData.length} />
-                            )}
-                          />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                    <p className="mt-3 text-sm text-gray-300">
-                      Wartość 0 oznacza, że inwestycja nie osiągnęła pełnego zwrotu w zadanym okresie.
-                    </p>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-[#3c2a20] rounded-2xl p-6 border border-yellow-600/30">
-                  <CardContent>
-                    <h3 className="text-lg font-semibold text-yellow-300 mb-4">
-                      Trend liniowy wartości inwestycji w czasie
-                    </h3>
-                    <ResponsiveContainer width="100%" height={380}>
-                      <LineChart data={trendData} margin={{ top: 34, right: 28, left: 0, bottom: 8 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#ffaa00" />
-                        <Tooltip content={<CustomTooltip />} />
-                        <XAxis dataKey="year" stroke="#fff" tick={{ fill: "#fff", fontSize: 12 }} />
-                        <YAxis stroke="#fff" tick={{ fill: "#fff", fontSize: 12 }} />
-                        <Legend wrapperStyle={{ color: "#fff", fontSize: 12 }} />
-                        {results.map((result, index) => (
-                          <Line
-                            key={result.id}
-                            type="monotone"
-                            dataKey={result.name}
-                            stroke={investmentColors[index]}
-                            strokeWidth={2}
-                            name={result.name}
-                            dot={{ r: 3 }}
-                            activeDot={{
-                              r: 6,
-                              fill: "#e5e7eb",
-                              stroke: "#86efac",
-                              strokeWidth: 2,
-                            }}
-                          >
-                            <LabelList
-                              content={(props) => (
-                                <CustomLineLabel {...props} dataLength={trendData.length} />
-                              )}
-                            />
-                          </Line>
-                        ))}
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-[#3c2a20] rounded-2xl p-6 border border-yellow-600/30">
-                  <CardContent>
-                    <h3 className="text-lg font-semibold text-yellow-300 mb-4">
-                      Tabela porównawcza
-                    </h3>
-                    <div className="overflow-x-auto">
-                      <table className="w-full min-w-[900px] table-fixed text-left border-collapse text-white text-sm">
-                        <thead>
-                          <tr>
-                            <th className="w-[160px] p-2 border border-dashed border-[#ffaa00]">Inwestycja</th>
-                            <th className="w-[140px] p-2 border border-dashed border-[#ffaa00]">Nakład początkowy</th>
-                            <th className="w-[140px] p-2 border border-dashed border-[#ffaa00]">Wartość końcowa</th>
-                            <th className="w-[140px] p-2 border border-dashed border-[#ffaa00]">Zysk całkowity</th>
-                            <th className="w-[120px] p-2 border border-dashed border-[#ffaa00]">Stopa zwrotu</th>
-                            <th className="w-[120px] p-2 border border-dashed border-[#ffaa00]">Śr. roczna</th>
-                            <th className="w-[120px] p-2 border border-dashed border-[#ffaa00]">Okres zwrotu</th>
-                          </tr>
-                        </thead>
-                        <tbody>
+                        </Line>
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[900px] table-fixed border-collapse text-left text-sm text-white">
+                      <thead>
+                        <tr>
+                          <th className="w-[80px] border border-dashed border-[#ffaa00] p-2">Rok</th>
                           {results.map((result) => (
-                            <tr key={result.id}>
-                              <td className="p-2 border border-dashed border-[#ffaa00] font-bold text-yellow-300">{result.name}</td>
-                              <td className="p-2 border border-dashed border-[#ffaa00]">{formatCurrency(result.initialOutlay)}</td>
-                              <td className="p-2 border border-dashed border-[#ffaa00]">{formatCurrency(result.finalValue)}</td>
-                              <td className="p-2 border border-dashed border-[#ffaa00]">{formatCurrency(result.totalGain)}</td>
-                              <td className="p-2 border border-dashed border-[#ffaa00]">{formatPercent(result.returnPercent)}</td>
-                              <td className="p-2 border border-dashed border-[#ffaa00]">{formatPercent(result.avgAnnualReturn)}</td>
-                              <td className="p-2 border border-dashed border-[#ffaa00]">{result.paybackYear ? `${result.paybackYear} lat` : "—"}</td>
-                            </tr>
+                            <th key={result.id} className="w-[160px] border border-dashed border-[#ffaa00] p-2">
+                              {result.name}
+                            </th>
                           ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </CardContent>
-                </Card>
-              </>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {valueTrendData.map((row) => (
+                          <tr key={row.year}>
+                            <td className="border border-dashed border-[#ffaa00] p-2">{row.year}</td>
+                            {results.map((result) => (
+                              <td key={result.id} className="border border-dashed border-[#ffaa00] p-2">
+                                {formatCurrency(Number(row[result.name] ?? 0))}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-2xl border border-yellow-600/30 bg-[#3c2a20] p-6">
+              <CardContent>
+                <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <h3 className="text-lg font-semibold text-yellow-300">
+                    Stopa zwrotu narastająco
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setPercentViewMode((prev) => (prev === "chart" ? "table" : "chart"))}
+                    className="rounded-lg bg-gray-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-500"
+                  >
+                    {percentViewMode === "chart" ? "Tabela" : "Wykres"}
+                  </button>
+                </div>
+
+                {percentViewMode === "chart" ? (
+                  <ResponsiveContainer width="100%" height={380}>
+                    <LineChart data={percentTrendData} margin={{ top: 34, right: 28, left: 0, bottom: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#ffaa00" />
+                      <Tooltip content={<CustomTooltip mode="percent" />} />
+                      <XAxis dataKey="year" stroke="#fff" tick={{ fill: "#fff", fontSize: 12 }} />
+                      <YAxis
+                        stroke="#fff"
+                        tick={{ fill: "#fff", fontSize: 12 }}
+                        tickFormatter={(value) => `${Number(value).toFixed(0)}%`}
+                      />
+                      <Legend iconType="circle" iconSize={8} wrapperStyle={{ color: "#fff", fontSize: 12 }} />
+                      {results.map((result, index) => (
+                        <Line
+                          key={result.id}
+                          type="monotone"
+                          dataKey={result.name}
+                          stroke={chartColors[index]}
+                          strokeWidth={2}
+                          name={result.name}
+                          dot={{ r: 3 }}
+                          activeDot={{ r: 6, fill: "#e5e7eb", stroke: "#86efac", strokeWidth: 2 }}
+                          legendType="circle"
+                        >
+                          <LabelList
+                            content={(props) => (
+                              <CustomLineLabel {...props} dataLength={percentTrendData.length} mode="percent" />
+                            )}
+                          />
+                        </Line>
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[900px] table-fixed border-collapse text-left text-sm text-white">
+                      <thead>
+                        <tr>
+                          <th className="w-[80px] border border-dashed border-[#ffaa00] p-2">Rok</th>
+                          {results.map((result) => (
+                            <th key={result.id} className="w-[160px] border border-dashed border-[#ffaa00] p-2">
+                              {result.name}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {percentTrendData.map((row) => (
+                          <tr key={row.year}>
+                            <td className="border border-dashed border-[#ffaa00] p-2">{row.year}</td>
+                            {results.map((result) => (
+                              <td key={result.id} className="border border-dashed border-[#ffaa00] p-2">
+                                {formatPercent(Number(row[result.name] ?? 0))}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {renderSingleMetricBarChart(
+              "Porównanie okresu zwrotu",
+              "paybackYear",
+              "Okres zwrotu",
+              "number"
             )}
 
-            {!calculated && (
-              <Card className="bg-[#3c2a20] rounded-2xl p-6 border border-yellow-600/30">
-                <CardContent>
-                  <h3 className="text-xl font-bold text-yellow-300 mb-3">
-                    Gotowy model porównawczy
-                  </h3>
-                  <p className="text-gray-300 leading-relaxed">
-                    Wprowadź dane pierwszej inwestycji, dodaj kolejne warianty przyciskiem <span className="font-bold text-green-300">+ Dodaj</span>, a następnie kliknij <span className="font-bold text-green-300">Porównaj inwestycje</span>. Wyniki pokażą wartość końcową, wynik procentowy, okres zwrotu oraz trend wartości każdej inwestycji w czasie.
-                  </p>
-                </CardContent>
-              </Card>
+            {renderReturnVsInflationChart()}
+
+            {renderSingleMetricBarChart(
+              "% miesiąca, po którym zysk pokrywa koszty",
+              "monthBreakEvenPercent",
+              "% miesiąca",
+              "percent"
+            )}
+
+
+            {renderSingleMetricBarChart(
+              "Zysk netto miesięczny",
+              "monthlyNetProfit",
+              "Zysk netto miesięczny",
+              "amount"
+            )}
+
+            {renderSingleMetricBarChart(
+              "Marża operacyjna",
+              "operatingMarginPercent",
+              "Marża operacyjna",
+              "percent"
             )}
           </div>
         </div>
@@ -934,7 +1517,7 @@ export default function PorownanieInwestycjiPremium() {
       <div className="mt-12 flex justify-center">
         <Link
           href="/kalkulatory"
-          className="inline-block border border-green-400 text-green-200 hover:bg-green-400/10 font-semibold px-8 py-3 rounded-xl transition"
+          className="inline-block rounded-xl border border-green-400 px-8 py-3 font-semibold text-green-200 transition hover:bg-green-400/10"
         >
           Wróć do kalkulatorów
         </Link>
