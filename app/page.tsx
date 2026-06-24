@@ -22,14 +22,14 @@ export default function HomePage() {
           <div className="grid md:grid-cols-3 gap-6">
             {[
               {
+                title: "Aktualności",
+                link: "/aktualnosci",
+                desc: "Sprawdź, nad czym pracujemy, jakie kalkulatory są w budowie i jak rozwija się FinCalc Pro.",
+              },
+              {
                 title: "Kalkulatory inwestycyjne",
                 link: "/kalkulatory",
                 desc: "Uruchom nasze najpopularniejsze kalkulatory w kilku kliknięciach.",
-              },
-              {
-                title: "Nauka i kursy",
-                link: "/kursy",
-                desc: "Praktyczne kursy i materiały przygotowane przez praktyków rynku finansowego.",
               },
               {
                 title: "Centrum wiedzy",

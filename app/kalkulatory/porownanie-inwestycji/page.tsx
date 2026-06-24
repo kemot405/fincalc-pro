@@ -23,7 +23,7 @@ import inflationForecastData from "../../../data/market-data/inflation-forecast.
 const MAX_INVESTMENTS = 5;
 
 const Card = ({ children, className }: any) => (
-  <div className={`rounded-2xl shadow-md ${className}`}>{children}</div>
+  <div className={`pdf-section rounded-2xl shadow-md break-inside-avoid-page ${className}`}>{children}</div>
 );
 
 const CardContent = ({ children }: any) => <div className="p-4">{children}</div>;
@@ -42,7 +42,8 @@ const Button = ({ children, onClick, className, disabled }: any) => (
 type InvestmentType =
   | "shortTermRental"
   | "longTermRental"
-  | "assetRental"
+  | "mobileAssetRental"
+  | "equipmentRental"
   | "dailyServices"
   | "monthlyServices"
   | "trade";
@@ -81,6 +82,7 @@ type InvestmentInput = {
   name: string;
   taxMode: TaxMode;
   investmentValue: number;
+  assetCount: number;
   monthlyRevenue: number;
   annualCosts: number;
   dailyPrice: number;
@@ -136,13 +138,121 @@ type TaxDefaults = {
 const typeLabels: Record<InvestmentType, string> = {
   shortTermRental: "Wynajem krótkoterminowy",
   longTermRental: "Wynajem długoterminowy",
-  assetRental: "Wynajem różny",
+  mobileAssetRental: "Wynajem aktywów ruchomych (współczynnik wykorzystania m-c %)",
+  equipmentRental: "Wynajem sprzętu, narzędzi (dzienna ilość wynajmów)",
   dailyServices: "Usługi - dzienna ilość klientów",
   monthlyServices: "Usługi - miesięczna ilość klientów",
   trade: "Handel",
 };
 
 const chartColors = ["#00cc66", "#66ccff", "#ffaa00", "#ff5c5c", "#c084fc"];
+
+const typeHelp: Record<InvestmentType, { description: string; fields: string[] }> = {
+  shortTermRental: {
+    description: "Najlepsze do analizy apartamentów, mieszkań i lokali wynajmowanych na doby.",
+    fields: [
+      "Nazwa inwestycji",
+      "Wartość początkowa inwestycji",
+      "Ilość mieszkań",
+      "Średnia cena najmu na dobę",
+      "Ilość dni aktywnych biznesowo",
+      "Współczynnik wykorzystania m-c (%)",
+      "Średnia ilość dób pojedynczego wynajmu",
+      "Średni koszt obsługi wynajmu",
+      "Koszty stałe miesięczne",
+      "Rodzaj opodatkowania",
+    ],
+  },
+  longTermRental: {
+    description: "Najlepsze do analizy klasycznego najmu mieszkań, lokali lub powierzchni w dłuższym okresie.",
+    fields: [
+      "Nazwa inwestycji",
+      "Wartość początkowa inwestycji",
+      "Ilość mieszkań",
+      "Przychody miesięczne z najmu",
+      "Ilość dni aktywnych biznesowo",
+      "Współczynnik wykorzystania (%)",
+      "Koszty roczne",
+      "Koszty stałe miesięczne",
+      "Rodzaj opodatkowania",
+    ],
+  },
+  mobileAssetRental: {
+    description: "Najlepsze do analizy wynajmu samochodów, przyczep, łodzi, maszyn lub innych aktywów ruchomych.",
+    fields: [
+      "Nazwa inwestycji",
+      "Wartość początkowa inwestycji",
+      "Ilość aktywów ruchomych",
+      "Średnia cena wynajmu",
+      "Ilość dni w miesiącu aktywnych dla biznesu",
+      "Współczynnik wykorzystania m-c (%)",
+      "Średnia ilość dób pojedynczego wynajmu",
+      "Średni koszt obsługi wynajmu",
+      "Koszty stałe miesięczne",
+      "Rodzaj opodatkowania",
+    ],
+  },
+  equipmentRental: {
+    description: "Najlepsze do analizy wynajmu sprzętu, narzędzi, maszyn i wyposażenia na krótkie okresy.",
+    fields: [
+      "Nazwa inwestycji",
+      "Wartość początkowa inwestycji",
+      "Średnia dzienna ilość wynajmów",
+      "Średnia cena wynajmu",
+      "Ilość dni w miesiącu aktywnych dla biznesu",
+      "Średnia ilość dób pojedynczego wynajmu",
+      "Średni koszt obsługi wynajmu",
+      "Koszty stałe miesięczne",
+      "Rodzaj opodatkowania",
+    ],
+  },
+  dailyServices: {
+    description: "Najlepsze do analizy usług sprzedawanych codziennie, np. salonów, punktów usługowych i działalności lokalnych.",
+    fields: [
+      "Nazwa inwestycji",
+      "Wartość początkowa inwestycji",
+      "Dzienna ilość usług",
+      "Średnia cena usługi",
+      "Ilość dni w miesiącu aktywnych dla biznesu",
+      "Średni koszt usługi",
+      "Koszty stałe miesięczne",
+      "Rodzaj opodatkowania",
+    ],
+  },
+  monthlyServices: {
+    description: "Najlepsze do analizy usług rozliczanych miesięcznie, abonamentów lub stałych kontraktów.",
+    fields: [
+      "Nazwa inwestycji",
+      "Wartość początkowa inwestycji",
+      "Miesięczna ilość usług",
+      "Średnia cena usługi",
+      "Średni koszt usługi",
+      "Koszty stałe miesięczne",
+      "Rodzaj opodatkowania",
+    ],
+  },
+  trade: {
+    description: "Najlepsze do analizy handlu, sklepu, e-commerce lub punktu sprzedaży z marżą na koszyku.",
+    fields: [
+      "Nazwa inwestycji",
+      "Wartość początkowa inwestycji",
+      "Dzienna ilość klientów",
+      "Średnia wartość koszyka",
+      "Ilość dni w miesiącu aktywnych dla biznesu",
+      "Średnia marża (%)",
+      "Koszty stałe miesięczne",
+      "Rodzaj opodatkowania",
+    ],
+  },
+};
+
+function buildTypeHelpText(type: InvestmentType): string {
+  const item = typeHelp[type];
+
+  return `${item.description}\n\nPola w tym schemacie:\n${item.fields
+    .map((field) => `• ${field}`)
+    .join("\n")}`;
+}
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("pl-PL", {
@@ -237,7 +347,10 @@ function getAverageInflationFromForecast(years: number, fallback: number): numbe
 
 function getWorkingDaysForRisk(input: InvestmentInput): number {
   if (
-    input.type === "assetRental" ||
+    input.type === "shortTermRental" ||
+    input.type === "longTermRental" ||
+    input.type === "mobileAssetRental" ||
+    input.type === "equipmentRental" ||
     input.type === "dailyServices" ||
     input.type === "trade"
   ) {
@@ -296,17 +409,19 @@ function CustomLineLabel({ x, y, value, index, dataLength, mode }: any) {
   );
 }
 
-function CustomBarLabel({ x, y, width, value, type = "amount" }: any) {
+function CustomBarLabel({ x, y, width, height, value, type = "amount", layout }: any) {
   if (value === null || value === undefined) return null;
+
+  const isVertical = layout === "vertical";
 
   return (
     <text
-      x={x + width / 2}
-      y={y - 6}
+      x={isVertical ? x + width + 8 : x + width / 2}
+      y={isVertical ? y + height / 2 + 4 : y - 6}
       fill="#f9fafb"
       fontSize={11}
       fontWeight={700}
-      textAnchor="middle"
+      textAnchor={isVertical ? "start" : "middle"}
     >
       {type === "percent"
         ? formatShortPercent(Number(value))
@@ -403,6 +518,7 @@ function createDefaultInvestment(id: number, type: InvestmentType = "dailyServic
     name: `Inwestycja ${id}`,
     taxMode: type === "longTermRental" ? "rentalLumpSum" : "generalRules",
     investmentValue: 100000,
+    assetCount: 1,
     monthlyRevenue: 5000,
     annualCosts: 6000,
     dailyPrice: 250,
@@ -439,31 +555,45 @@ function calculateTax(income: number, taxMode: TaxMode, taxDefaults: TaxDefaults
 }
 
 function calculateMonthlyModel(input: InvestmentInput) {
+  const assetCount = Math.max(input.assetCount, 1);
+  const activeDays = Math.max(input.workingDaysPerMonth, 1);
+  const utilization = Math.max(input.occupancyRate, 0) / 100;
+  const averageRentalDays = Math.max(input.averageRentalDays, 1);
+
   switch (input.type) {
     case "shortTermRental": {
-      const rentedDays = 30 * (Math.max(input.occupancyRate, 0) / 100);
-      const rentalsCount = input.averageRentalDays > 0 ? rentedDays / input.averageRentalDays : 0;
+      const rentedDays = activeDays * utilization * assetCount;
+      const rentalsCount = rentedDays / averageRentalDays;
       const revenue = rentedDays * input.dailyPrice;
       const variableCosts = rentalsCount * input.variableCostPerRental;
       return { revenue, variableCosts, fixedCosts: input.fixedMonthlyCosts };
     }
 
     case "longTermRental": {
-      const revenue = input.monthlyRevenue;
+      const activeDaysFactor = Math.min(Math.max(activeDays / 30, 0), 1);
+      const revenue = input.monthlyRevenue * assetCount * utilization * activeDaysFactor;
       const variableCosts = Math.max(input.annualCosts, 0) / 12;
-      return { revenue, variableCosts, fixedCosts: 0 };
+      return { revenue, variableCosts, fixedCosts: input.fixedMonthlyCosts };
     }
 
-    case "assetRental": {
-      const rentalDays = input.dailyCustomers * input.averageRentalDays * input.workingDaysPerMonth;
-      const rentalsCount = input.dailyCustomers * input.workingDaysPerMonth;
-      const revenue = rentalDays * input.averagePrice;
+    case "mobileAssetRental": {
+      const rentedDays = assetCount * activeDays * utilization;
+      const rentalsCount = rentedDays / averageRentalDays;
+      const revenue = rentedDays * input.averagePrice;
+      const variableCosts = rentalsCount * input.variableCostPerRental;
+      return { revenue, variableCosts, fixedCosts: input.fixedMonthlyCosts };
+    }
+
+    case "equipmentRental": {
+      const rentalsCount = input.dailyCustomers * activeDays;
+      const rentedDays = rentalsCount * averageRentalDays;
+      const revenue = rentedDays * input.averagePrice;
       const variableCosts = rentalsCount * input.variableCostPerRental;
       return { revenue, variableCosts, fixedCosts: input.fixedMonthlyCosts };
     }
 
     case "dailyServices": {
-      const services = input.dailyCustomers * input.workingDaysPerMonth;
+      const services = input.dailyCustomers * activeDays;
       const revenue = services * input.averagePrice;
       const variableCosts = services * input.variableCostPerUnit;
       return { revenue, variableCosts, fixedCosts: input.fixedMonthlyCosts };
@@ -477,7 +607,7 @@ function calculateMonthlyModel(input: InvestmentInput) {
     }
 
     case "trade": {
-      const customers = input.dailyCustomers * input.workingDaysPerMonth;
+      const customers = input.dailyCustomers * activeDays;
       const revenue = customers * input.basketValue;
       const grossMargin = revenue * (Math.max(input.marginPercent, 0) / 100);
       const variableCosts = Math.max(revenue - grossMargin, 0);
@@ -804,29 +934,45 @@ export default function PorownanieInwestycji() {
     const html2canvas = (await import("html2canvas")).default;
     const { jsPDF } = await import("jspdf");
 
-    const canvas = await html2canvas(reportRef.current, {
-      scale: 2,
-      backgroundColor: "#111827",
-      useCORS: true,
-    });
-
-    const imgData = canvas.toDataURL("image/png");
     const pdf = new jsPDF("p", "mm", "a4");
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
-    const imgWidth = pageWidth;
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-    let heightLeft = imgHeight;
-    let position = 0;
+    const margin = 8;
+    const availableWidth = pageWidth - margin * 2;
+    const availableHeight = pageHeight - margin * 2;
 
-    pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-    heightLeft -= pageHeight;
+    const sections = Array.from(
+      reportRef.current.querySelectorAll(".pdf-section")
+    ) as HTMLElement[];
 
-    while (heightLeft > 0) {
-      position = heightLeft - imgHeight;
-      pdf.addPage();
-      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
+    const header = reportRef.current.querySelector(".pdf-header") as HTMLElement | null;
+    const elementsToRender = header ? [header, ...sections] : sections;
+
+    for (let index = 0; index < elementsToRender.length; index++) {
+      const element = elementsToRender[index];
+
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        backgroundColor: "#111827",
+        useCORS: true,
+        windowWidth: reportRef.current.scrollWidth,
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+
+      let imgWidth = availableWidth;
+      let imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      if (imgHeight > availableHeight) {
+        const heightScale = availableHeight / imgHeight;
+        imgWidth = imgWidth * heightScale;
+        imgHeight = availableHeight;
+      }
+
+      if (index > 0) pdf.addPage();
+
+      const x = margin + (availableWidth - imgWidth) / 2;
+      pdf.addImage(imgData, "PNG", x, margin, imgWidth, imgHeight);
     }
 
     pdf.save("porownanie-inwestycji-fincalc-pro.pdf");
@@ -855,6 +1001,9 @@ export default function PorownanieInwestycji() {
   );
 
   const renderFields = (investment: InvestmentInput) => {
+    const percentHint =
+      "Wartość możesz wprowadzać jako procent z dwiema cyframi po przecinku, np. 62,50.";
+
     const commonNameAndValue = (
       <>
         <div className="relative pt-1">
@@ -898,10 +1047,12 @@ export default function PorownanieInwestycji() {
       return (
         <>
           {commonNameAndValue}
+          {baseInput(investment, "assetCount", "Ilość mieszkań", "Liczba mieszkań lub lokali objętych analizą.")}
           {baseInput(investment, "dailyPrice", "Średnia cena najmu na dobę", "Średnia cena brutto za jedną dobę najmu.")}
-          {baseInput(investment, "occupancyRate", "Współczynnik obłożenia w miesiącu (%)", "Jaki procent miesiąca lokal jest wynajęty.")}
-          {baseInput(investment, "averageRentalDays", "Średnia ilość dób jednego wynajmu", "Średni czas trwania jednej rezerwacji.")}
-          {baseInput(investment, "variableCostPerRental", "Koszty zmienne zależne od ilości wynajmów", "Koszt sprzątania, serwisu lub obsługi jednej rezerwacji.")}
+          {baseInput(investment, "workingDaysPerMonth", "Ilość dni aktywnych biznesowo", "Liczba dni w miesiącu, w których lokal jest dostępny i może generować przychód.")}
+          {baseInput(investment, "occupancyRate", "Współczynnik wykorzystania m-c (%)", `Procent dostępnego czasu w miesiącu, w którym mieszkanie jest wynajęte. ${percentHint}`)}
+          {baseInput(investment, "averageRentalDays", "Średnia ilość dób pojedynczego wynajmu", "Średni czas trwania jednej rezerwacji.")}
+          {baseInput(investment, "variableCostPerRental", "Średni koszt obsługi wynajmu", "Koszt sprzątania, serwisu lub obsługi jednej rezerwacji.")}
           {baseInput(investment, "fixedMonthlyCosts", "Koszty stałe miesięczne", "Koszty niezależne od liczby rezerwacji.")}
           {taxSelect}
         </>
@@ -912,23 +1063,43 @@ export default function PorownanieInwestycji() {
       return (
         <>
           {commonNameAndValue}
-          {baseInput(investment, "monthlyRevenue", "Przychody miesięczne z najmu", "Miesięczny czynsz lub średni przychód z najmu.")}
+          {baseInput(investment, "assetCount", "Ilość mieszkań", "Liczba mieszkań lub lokali objętych analizą.")}
+          {baseInput(investment, "monthlyRevenue", "Przychody miesięczne z najmu", "Miesięczny czynsz lub średni przychód z najmu dla jednego mieszkania.")}
+          {baseInput(investment, "workingDaysPerMonth", "Ilość dni aktywnych biznesowo", "Liczba dni w miesiącu, w których lokal jest dostępny i może generować przychód.")}
+          {baseInput(investment, "occupancyRate", "Współczynnik wykorzystania (%)", `Procent dostępnego czasu, w którym mieszkanie generuje przychód. ${percentHint}`)}
           {baseInput(investment, "annualCosts", "Koszty roczne", "Roczne koszty utrzymania, remontów, ubezpieczenia i administracji.")}
+          {baseInput(investment, "fixedMonthlyCosts", "Koszty stałe miesięczne", "Stałe koszty miesięczne, jeśli nie są ujęte w kosztach rocznych.")}
           {taxSelect}
         </>
       );
     }
 
-    if (investment.type === "assetRental") {
+    if (investment.type === "mobileAssetRental") {
       return (
         <>
           {commonNameAndValue}
-          {baseInput(investment, "dailyCustomers", "Dzienna ilość klientów", "Średnia liczba klientów dziennie.")}
-          {baseInput(investment, "averagePrice", "Średnia cena wynajmu", "Cena za jedną dobę wynajmu.")}
-          {baseInput(investment, "averageRentalDays", "Średnia ilość dób jednego wynajmu", "Średni czas trwania wynajmu.")}
-          {baseInput(investment, "variableCostPerRental", "Koszty zmienne zależne od ilości wynajmów", "Serwis, przygotowanie, obsługa jednego wynajmu.")}
-          {baseInput(investment, "workingDaysPerMonth", "Średnia ilość dni pracujących w miesiącu", "Ile dni w miesiącu inwestycja aktywnie pracuje.")}
-          {baseInput(investment, "fixedMonthlyCosts", "Koszty stałe miesięczne", "Stałe koszty utrzymania aktywa.")}
+          {baseInput(investment, "assetCount", "Ilość aktywów ruchomych", "Liczba samochodów, przyczep, łodzi, maszyn lub innych aktywów.")}
+          {baseInput(investment, "averagePrice", "Średnia cena wynajmu", "Cena za jedną dobę wynajmu jednego aktywa.")}
+          {baseInput(investment, "workingDaysPerMonth", "Ilość dni w miesiącu aktywnych dla biznesu", "Liczba dni w miesiącu, w których aktywa mogą być wynajmowane.")}
+          {baseInput(investment, "occupancyRate", "Współczynnik wykorzystania (m-c %)", `Procent dostępnego czasu w miesiącu, w którym aktywa są wynajęte. ${percentHint}`)}
+          {baseInput(investment, "averageRentalDays", "Średnia ilość dób pojedynczego wynajmu", "Średni czas trwania jednego wynajmu.")}
+          {baseInput(investment, "variableCostPerRental", "Średni koszt obsługi wynajmu", "Serwis, przygotowanie, obsługa lub przekazanie jednego wynajmu.")}
+          {baseInput(investment, "fixedMonthlyCosts", "Koszty stałe miesięczne", "Stałe koszty utrzymania aktywów.")}
+          {taxSelect}
+        </>
+      );
+    }
+
+    if (investment.type === "equipmentRental") {
+      return (
+        <>
+          {commonNameAndValue}
+          {baseInput(investment, "dailyCustomers", "Średnia dzienna ilość wynajmów", "Średnia liczba wynajmów realizowanych dziennie.")}
+          {baseInput(investment, "averagePrice", "Średnia cena wynajmu", "Cena za jedną dobę wynajmu sprzętu lub narzędzia.")}
+          {baseInput(investment, "workingDaysPerMonth", "Ilość dni w miesiącu aktywnych dla biznesu", "Liczba dni w miesiącu, w których biznes prowadzi wynajem.")}
+          {baseInput(investment, "averageRentalDays", "Średnia ilość dób pojedynczego wynajmu", "Średni czas trwania jednego wynajmu.")}
+          {baseInput(investment, "variableCostPerRental", "Średni koszt obsługi wynajmu", "Serwis, przygotowanie, obsługa lub przekazanie jednego wynajmu.")}
+          {baseInput(investment, "fixedMonthlyCosts", "Koszty stałe miesięczne", "Stałe koszty miesięczne działalności.")}
           {taxSelect}
         </>
       );
@@ -940,8 +1111,8 @@ export default function PorownanieInwestycji() {
           {commonNameAndValue}
           {baseInput(investment, "dailyCustomers", "Dzienna ilość usług", "Średnia liczba wykonanych usług dziennie.")}
           {baseInput(investment, "averagePrice", "Średnia cena usługi", "Średnia cena sprzedaży jednej usługi.")}
-          {baseInput(investment, "workingDaysPerMonth", "Średnia ilość dni pracujących w miesiącu", "Ile dni w miesiącu usługa jest sprzedawana.")}
-          {baseInput(investment, "variableCostPerUnit", "Średni koszt zmienny dla usługi", "Koszt materiałów, prowizji lub obsługi jednej usługi.")}
+          {baseInput(investment, "workingDaysPerMonth", "Ilość dni w miesiącu aktywnych dla biznesu", "Ile dni w miesiącu usługa jest sprzedawana.")}
+          {baseInput(investment, "variableCostPerUnit", "Średni koszt usługi", "Koszt materiałów, prowizji lub obsługi jednej usługi.")}
           {baseInput(investment, "fixedMonthlyCosts", "Koszty stałe miesięczne", "Stałe koszty miesięczne działalności.")}
           {taxSelect}
         </>
@@ -954,7 +1125,7 @@ export default function PorownanieInwestycji() {
           {commonNameAndValue}
           {baseInput(investment, "monthlyCustomers", "Miesięczna ilość usług", "Liczba usług sprzedawanych miesięcznie.")}
           {baseInput(investment, "averagePrice", "Średnia cena usługi", "Średnia cena sprzedaży jednej usługi.")}
-          {baseInput(investment, "variableCostPerUnit", "Średni koszt zmienny dla usługi", "Koszt materiałów, prowizji lub obsługi jednej usługi.")}
+          {baseInput(investment, "variableCostPerUnit", "Średni koszt usługi", "Koszt materiałów, prowizji lub obsługi jednej usługi.")}
           {baseInput(investment, "fixedMonthlyCosts", "Koszty stałe miesięczne", "Stałe koszty miesięczne działalności.")}
           {taxSelect}
         </>
@@ -966,8 +1137,8 @@ export default function PorownanieInwestycji() {
         {commonNameAndValue}
         {baseInput(investment, "dailyCustomers", "Dzienna ilość klientów", "Średnia liczba klientów dziennie.")}
         {baseInput(investment, "basketValue", "Średnia wartość koszyka", "Średnia wartość jednej transakcji.")}
-        {baseInput(investment, "marginPercent", "Średnia marża (%)", "Marża brutto na sprzedaży.")}
-        {baseInput(investment, "workingDaysPerMonth", "Średnia ilość dni pracujących w miesiącu", "Ile dni w miesiącu sklep prowadzi sprzedaż.")}
+        {baseInput(investment, "workingDaysPerMonth", "Ilość dni w miesiącu aktywnych dla biznesu", "Ile dni w miesiącu sklep prowadzi sprzedaż.")}
+        {baseInput(investment, "marginPercent", "Średnia marża (%)", `Marża brutto na sprzedaży. ${percentHint}`)}
         {baseInput(investment, "fixedMonthlyCosts", "Koszty stałe miesięczne", "Stałe koszty miesięczne działalności.")}
         {taxSelect}
       </>
@@ -1021,42 +1192,83 @@ export default function PorownanieInwestycji() {
     dataKey: string,
     barName: string,
     valueType: "amount" | "percent" | "number"
-  ) => (
-    <Card className="rounded-2xl border border-yellow-600/30 bg-[#3c2a20] p-6">
-      <CardContent>
-        <h3 className="mb-4 text-lg font-semibold text-yellow-300">{title}</h3>
-        <ResponsiveContainer width="100%" height={340}>
-          <BarChart data={comparisonData} margin={{ top: 34, right: 20, left: 0, bottom: 8 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#ffaa00" />
-            <XAxis dataKey="name" stroke="#fff" tick={{ fill: "#fff", fontSize: 12 }} />
-            <YAxis
-              stroke="#fff"
-              tick={{ fill: "#fff", fontSize: 12 }}
-              tickFormatter={(value) =>
-                valueType === "percent"
-                  ? `${Number(value).toFixed(0)}%`
-                  : valueType === "number"
-                    ? String(Math.round(Number(value)))
-                    : formatShortCurrency(Number(value))
-              }
-            />
-            <Legend iconType="circle" iconSize={8} wrapperStyle={{ color: "#fff", fontSize: 12 }} />
-            <Bar
-              dataKey={dataKey}
-              fill="#66ccff"
-              name={barName}
-              maxBarSize={56}
-              legendType="circle"
+  ) => {
+    const isPaybackChart = dataKey === "paybackYear";
+    const chartData = isPaybackChart
+      ? [...comparisonData].sort((a, b) => {
+          const aValue = a.paybackYear || Number.POSITIVE_INFINITY;
+          const bValue = b.paybackYear || Number.POSITIVE_INFINITY;
+          return aValue - bValue;
+        })
+      : comparisonData;
+
+    return (
+      <Card className="rounded-2xl border border-yellow-600/30 bg-[#3c2a20] p-6">
+        <CardContent>
+          <h3 className="mb-4 text-lg font-semibold text-yellow-300">{title}</h3>
+          <ResponsiveContainer width="100%" height={isPaybackChart ? 360 : 340}>
+            <BarChart
+              data={chartData}
+              layout={isPaybackChart ? "vertical" : "horizontal"}
+              margin={{ top: 34, right: isPaybackChart ? 90 : 28, left: isPaybackChart ? 90 : 0, bottom: 8 }}
             >
-              <LabelList
-                content={(props) => <CustomBarLabel {...props} type={valueType} />}
-              />
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </CardContent>
-    </Card>
-  );
+              <CartesianGrid strokeDasharray="3 3" stroke="#ffaa00" />
+              {isPaybackChart ? (
+                <>
+                  <XAxis
+                    type="number"
+                    stroke="#fff"
+                    tick={{ fill: "#fff", fontSize: 12 }}
+                    tickFormatter={(value) => String(Math.round(Number(value)))}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    stroke="#fff"
+                    tick={{ fill: "#fff", fontSize: 12 }}
+                    width={130}
+                  />
+                </>
+              ) : (
+                <>
+                  <XAxis dataKey="name" stroke="#fff" tick={{ fill: "#fff", fontSize: 12 }} />
+                  <YAxis
+                    stroke="#fff"
+                    tick={{ fill: "#fff", fontSize: 12 }}
+                    tickFormatter={(value) =>
+                      valueType === "percent"
+                        ? `${Number(value).toFixed(0)}%`
+                        : valueType === "number"
+                          ? String(Math.round(Number(value)))
+                          : formatShortCurrency(Number(value))
+                    }
+                  />
+                </>
+              )}
+              <Legend iconType="circle" iconSize={8} wrapperStyle={{ color: "#fff", fontSize: 12 }} />
+              <Bar
+                dataKey={dataKey}
+                fill="#66ccff"
+                name={barName}
+                maxBarSize={56}
+                legendType="circle"
+              >
+                <LabelList
+                content={(props) => (
+                <CustomBarLabel
+                {...props}
+                type={valueType}
+                layout={isPaybackChart ? "vertical" : "horizontal"}
+                />
+                 )}
+                />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+    );
+  };
 
   const renderReturnVsInflationChart = () => (
     <Card className="rounded-2xl border border-yellow-600/30 bg-[#3c2a20] p-6">
@@ -1104,7 +1316,7 @@ export default function PorownanieInwestycji() {
   return (
     <div className="min-h-screen bg-gray-900 p-6 text-white">
       <div ref={reportRef}>
-        <div className="relative mb-6">
+        <div className="pdf-header relative mb-6">
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1224,14 +1436,19 @@ export default function PorownanieInwestycji() {
                     <div className="mb-3 text-sm font-bold text-yellow-300">Wybierz rodzaj inwestycji</div>
                     <div className="grid grid-cols-1 gap-2">
                       {(Object.keys(typeLabels) as InvestmentType[]).map((type) => (
-                        <button
+                        <div
                           key={type}
-                          type="button"
-                          onClick={() => addInvestment(type)}
-                          className="rounded-lg border border-green-400/40 px-4 py-2 text-left font-semibold text-green-100 transition hover:bg-green-400/10"
+                          className="flex items-center justify-between gap-3 rounded-lg border border-green-400/40 px-4 py-2 text-left font-semibold text-green-100 transition hover:bg-green-400/10"
                         >
-                          {typeLabels[type]}
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => addInvestment(type)}
+                            className="flex-1 text-left"
+                          >
+                            {typeLabels[type]}
+                          </button>
+                          <InfoHint text={buildTypeHelpText(type)} />
+                        </div>
                       ))}
                     </div>
                   </div>

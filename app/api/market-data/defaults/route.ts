@@ -36,27 +36,59 @@ export async function GET() {
     },
 
     tax: {
-      // Podatek Belki
       belka: 19,
 
-      // Najem prywatny / ryczałt
       rentalPrivateBase: 8.5,
       rentalPrivateHigh: 12.5,
       rentalPrivateThreshold: 100000,
 
-      // Zasady ogólne działalności gospodarczej
       generalRulesBase: 12,
       generalRulesHigh: 32,
       generalRulesThreshold: 120000,
 
-      // Podatek liniowy
       linear: 19,
-
-      // Domyślny podatek dla działalności operacyjnej
       businessDefault: 19,
-
-      // Fallback
       default: 8.5,
+    },
+
+    riskThresholds: {
+      monthBreakEvenPercent: {
+        low: {
+          max: 60,
+          label: "Niskie ryzyko",
+          tone: "green",
+        },
+        medium: {
+          minExclusive: 60,
+          max: 85,
+          label: "Średnie ryzyko",
+          tone: "yellow",
+        },
+        high: {
+          minExclusive: 85,
+          label: "Wysokie ryzyko",
+          tone: "red",
+        },
+      },
+
+      operatingMarginPercent: {
+        good: {
+          min: 20,
+          label: "Dobrze",
+          tone: "green",
+        },
+        medium: {
+          min: 10,
+          maxExclusive: 20,
+          label: "Średnio",
+          tone: "yellow",
+        },
+        weak: {
+          maxExclusive: 10,
+          label: "Słabo",
+          tone: "red",
+        },
+      },
     },
   });
 }

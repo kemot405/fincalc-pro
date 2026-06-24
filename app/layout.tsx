@@ -65,6 +65,9 @@ export default function RootLayout({
 
           {/* Menu */}
           <nav className="space-x-6 text-sm hidden md:flex">
+            <Link href="/aktualnosci" className="hover:text-green-400 transition">
+            Aktualności
+            </Link>
             <Link href="/kalkulatory" className="hover:text-green-400 transition">
               Kalkulatory
             </Link>
@@ -77,8 +80,14 @@ export default function RootLayout({
             <Link href="/analizy" className="hover:text-green-400 transition">
               Analizy
             </Link>
-            <Link href="#kontakt" className="hover:text-green-400 transition">
-              Kontakt
+            <Link href="/dane-rynkowe" className="hover:text-green-400 transition">
+              Dane do modeli
+            </Link>
+            <Link href="/faq" className="hover:text-green-400 transition">
+              FAQ
+            </Link>
+            <Link href="/kontakt" className="hover:text-green-400 transition">
+            Kontakt
             </Link>
             <Link
               href="#login"
