@@ -7,6 +7,17 @@ export const metadata = {
   description: "Profesjonalne narzędzia i wiedza finansowa",
 };
 
+const menuItems = [
+  { label: "Aktualności", href: "/aktualnosci" },
+  { label: "Kalkulatory", href: "/kalkulatory" },
+  { label: "Kursy", href: "/kursy" },
+  { label: "Centrum Wiedzy", href: "/centrum-wiedzy" },
+  { label: "Analizy", href: "/analizy" },
+  { label: "Dane do modeli", href: "/dane-rynkowe" },
+  { label: "FAQ", href: "/faq" },
+  { label: "Kontakt", href: "/kontakt" },
+];
+
 export default function RootLayout({
   children,
 }: {
@@ -15,16 +26,14 @@ export default function RootLayout({
   return (
     <html lang="pl">
       <body className="bg-gray-900 text-white font-sans">
-        {/* 🔝 Nagłówek */}
-        <header className="flex justify-between items-center px-8 py-4 bg-[#2b1e17] border-b border-yellow-500 sticky top-0 z-50">
-          <div className="flex items-center space-x-4">
-            {/* Logo */}
+        <header className="flex justify-between items-center px-4 md:px-8 py-4 bg-[#2b1e17] border-b border-yellow-500 sticky top-0 z-50">
+          <div className="flex items-center space-x-3 md:space-x-4">
             <Link href="/">
               <div className="flex items-center">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   viewBox="0 0 100 100"
-                  className="h-16 w-16 rounded-xl border border-orange-500/80 bg-[#2b1e17] p-1"
+                  className="h-14 w-14 md:h-16 md:w-16 rounded-xl border border-orange-500/80 bg-[#2b1e17] p-1"
                 >
                   <rect
                     x="2"
@@ -54,41 +63,25 @@ export default function RootLayout({
               </div>
             </Link>
 
-            {/* Tekst obok logo */}
             <Link
               href="/"
-              className="text-2xl font-bold text-yellow-400 hover:text-yellow-300 transition"
+              className="text-2xl md:text-3xl font-bold text-yellow-400 hover:text-yellow-300 transition"
             >
               FinCalc <span style={{ color: "#d98947" }}>Pro</span>
             </Link>
           </div>
 
-          {/* Menu */}
           <nav className="space-x-6 text-sm hidden md:flex">
-            <Link href="/aktualnosci" className="hover:text-green-400 transition">
-            Aktualności
-            </Link>
-            <Link href="/kalkulatory" className="hover:text-green-400 transition">
-              Kalkulatory
-            </Link>
-            <Link href="/kursy" className="hover:text-green-400 transition">
-              Kursy
-            </Link>
-            <Link href="/centrum-wiedzy" className="hover:text-green-400 transition">
-              Centrum Wiedzy
-            </Link>
-            <Link href="/analizy" className="hover:text-green-400 transition">
-              Analizy
-            </Link>
-            <Link href="/dane-rynkowe" className="hover:text-green-400 transition">
-              Dane do modeli
-            </Link>
-            <Link href="/faq" className="hover:text-green-400 transition">
-              FAQ
-            </Link>
-            <Link href="/kontakt" className="hover:text-green-400 transition">
-            Kontakt
-            </Link>
+            {menuItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="hover:text-green-400 transition"
+              >
+                {item.label}
+              </Link>
+            ))}
+
             <Link
               href="#login"
               className="text-orange-400 font-semibold hover:text-orange-300 transition"
@@ -96,9 +89,35 @@ export default function RootLayout({
               Zaloguj się
             </Link>
           </nav>
+
+          <details className="relative md:hidden">
+            <summary className="list-none cursor-pointer rounded-lg border border-green-400/40 bg-gray-700 px-3 py-2 text-lg font-bold text-white">
+              ☰
+            </summary>
+
+            <div className="absolute right-0 mt-3 w-64 rounded-2xl border border-yellow-600/30 bg-[#34241b] p-3 shadow-2xl">
+              <div className="flex flex-col gap-2">
+                {menuItems.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="rounded-lg px-4 py-3 text-sm font-semibold text-green-100 hover:bg-green-900/40"
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+
+                <Link
+                  href="#login"
+                  className="rounded-lg px-4 py-3 text-sm font-semibold text-orange-400 hover:bg-green-900/40"
+                >
+                  Zaloguj się
+                </Link>
+              </div>
+            </div>
+          </details>
         </header>
 
-        {/* 🧭 Główna zawartość */}
         <main>{children}</main>
       </body>
     </html>
