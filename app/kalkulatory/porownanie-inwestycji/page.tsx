@@ -758,27 +758,97 @@ export default function PorownanieInwestycji() {
   const [pdfProgress, setPdfProgress] = useState(0);
 
   useEffect(() => {
-    const mobileMenuLabels = ["Aktualności", "Kalkulatory", "Kursy"];
-    const mobileMenuBackground = "#243424";
+    const menuLabelGroups = [["aktualności", "aktualnosci"], ["kalkulatory"], ["kursy"]];
+    const mobileMenuBackground = "#21130d";
 
     const isMobileViewport = () => window.matchMedia("(max-width: 767px)").matches;
 
     const isVisible = (element: HTMLElement) => {
+      const style = window.getComputedStyle(element);
       const rect = element.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0;
+
+      return (
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        Number(style.opacity) !== 0 &&
+        rect.width > 0 &&
+        rect.height > 0
+      );
     };
 
-    const getMobileMainMenu = (): HTMLElement | null => {
-      if (!isMobileViewport()) return null;
+    const normalizeText = (value: string) => value.toLowerCase().trim();
 
-      const candidates = Array.from(
-        document.querySelectorAll<HTMLElement>("nav, header, aside, div")
-      ).filter((element) => {
+    const getMenuItems = (): HTMLElement[] => {
+      if (!isMobileViewport()) return [];
+
+      return menuLabelGroups
+        .map((group) => {
+          const candidates = Array.from(
+            document.querySelectorAll<HTMLElement>("a, button, [role='menuitem'], li, span")
+          ).filter((element) => {
+            if (reportRef.current?.contains(element)) return false;
+            if (!isVisible(element)) return false;
+
+            const text = normalizeText(element.innerText || element.textContent || "");
+            return group.some((label) => text.includes(label));
+          });
+
+          return candidates.sort((a, b) => {
+            const aRect = a.getBoundingClientRect();
+            const bRect = b.getBoundingClientRect();
+            return aRect.width * aRect.height - bRect.width * bRect.height;
+          })[0];
+        })
+        .filter((element): element is HTMLElement => Boolean(element));
+    };
+
+    const getMobileMenuToggle = (): HTMLElement | null => {
+      const toggles = Array.from(document.querySelectorAll<HTMLElement>("button, [role='button']")).filter(
+        (element) => {
+          if (reportRef.current?.contains(element)) return false;
+          if (!isVisible(element)) return false;
+
+          const rect = element.getBoundingClientRect();
+          return (
+            rect.top <= 120 &&
+            rect.right >= window.innerWidth - 160 &&
+            rect.width <= 190 &&
+            rect.height <= 100
+          );
+        }
+      );
+
+      const expandedToggle = toggles.find((element) => element.getAttribute("aria-expanded") === "true");
+      if (expandedToggle) return expandedToggle;
+
+      return toggles.sort((a, b) => {
+        const aRect = a.getBoundingClientRect();
+        const bRect = b.getBoundingClientRect();
+        return aRect.top - bRect.top || bRect.right - aRect.right;
+      })[0] ?? null;
+    };
+
+    const getMobileMainMenuPanel = (): HTMLElement | null => {
+      const items = getMenuItems();
+      if (items.length !== menuLabelGroups.length) return null;
+
+      const toggle = getMobileMenuToggle();
+      const firstItemAncestors: HTMLElement[] = [];
+      let current = items[0].parentElement;
+
+      while (current && current !== document.body && current !== document.documentElement) {
+        firstItemAncestors.push(current);
+        current = current.parentElement;
+      }
+
+      const candidates = firstItemAncestors.filter((element) => {
         if (reportRef.current?.contains(element)) return false;
+        if (toggle && element.contains(toggle)) return false;
+        if (!items.every((item) => element.contains(item))) return false;
         if (!isVisible(element)) return false;
 
-        const text = element.textContent ?? "";
-        return mobileMenuLabels.every((label) => text.includes(label));
+        const rect = element.getBoundingClientRect();
+        return rect.height >= 80 && rect.width >= 120;
       });
 
       if (!candidates.length) return null;
@@ -793,64 +863,65 @@ export default function PorownanieInwestycji() {
       })[0];
     };
 
-    const getMobileMenuToggle = (menuElement: HTMLElement): HTMLButtonElement | null => {
-      const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).filter(
-        (button) => !menuElement.contains(button) && isVisible(button)
-      );
+    const styleMobileMainMenuPanel = () => {
+      const panel = getMobileMainMenuPanel();
+      if (!panel) return;
 
-      const expandedButton = buttons.find((button) => button.getAttribute("aria-expanded") === "true");
-      if (expandedButton) return expandedButton;
+      const panelRect = panel.getBoundingClientRect();
+      const elementsToStyle = [
+        panel,
+        ...Array.from(panel.querySelectorAll<HTMLElement>("div, nav, ul, ol, li")),
+      ].filter((element) => {
+        if (!isVisible(element)) return false;
 
-      const topRightButtons = buttons
-        .map((button) => ({ button, rect: button.getBoundingClientRect() }))
-        .filter(({ rect }) =>
-          rect.top <= 120 &&
-          rect.right >= window.innerWidth - 160 &&
-          rect.width <= 180 &&
-          rect.height <= 90
-        )
-        .sort((a, b) => a.rect.top - b.rect.top || b.rect.right - a.rect.right);
+        const rect = element.getBoundingClientRect();
+        return (
+          rect.top >= panelRect.top - 1 &&
+          rect.left >= panelRect.left - 1 &&
+          rect.right <= panelRect.right + 1 &&
+          rect.bottom <= panelRect.bottom + 1
+        );
+      });
 
-      return topRightButtons[0]?.button ?? null;
+      elementsToStyle.forEach((element) => {
+        element.style.setProperty("background-color", mobileMenuBackground, "important");
+        element.style.setProperty("background", mobileMenuBackground, "important");
+      });
+
+      panel.style.setProperty("border-color", "rgba(250, 204, 21, 0.3)", "important");
+      panel.style.setProperty("box-shadow", "0 18px 40px rgba(0, 0, 0, 0.45)", "important");
     };
 
-    const styleMobileMainMenu = () => {
-      const menuElement = getMobileMainMenu();
-      if (!menuElement) return;
-
-      menuElement.style.backgroundColor = mobileMenuBackground;
-      menuElement.style.borderColor = "rgba(250, 204, 21, 0.3)";
-      menuElement.style.boxShadow = "0 18px 40px rgba(0, 0, 0, 0.45)";
-    };
-
-    const handleOutsideMainMenuClick = (event: MouseEvent | TouchEvent) => {
-      const menuElement = getMobileMainMenu();
-      if (!menuElement) return;
+    const handleOutsideMainMenuClick = (event: PointerEvent) => {
+      const panel = getMobileMainMenuPanel();
+      if (!panel) return;
 
       const target = event.target;
       if (!(target instanceof Node)) return;
-      if (menuElement.contains(target)) return;
+      if (panel.contains(target)) return;
 
-      const menuToggle = getMobileMenuToggle(menuElement);
-      if (menuToggle?.contains(target)) return;
+      const toggle = getMobileMenuToggle();
+      if (toggle?.contains(target)) return;
 
-      menuToggle?.click();
+      toggle?.click();
     };
 
-    styleMobileMainMenu();
+    const runStyleUpdate = () => window.requestAnimationFrame(styleMobileMainMenuPanel);
 
-    const observer = new MutationObserver(styleMobileMainMenu);
+    runStyleUpdate();
+
+    const observer = new MutationObserver(runStyleUpdate);
     observer.observe(document.body, { childList: true, subtree: true, attributes: true });
 
-    document.addEventListener("mousedown", handleOutsideMainMenuClick);
-    document.addEventListener("touchstart", handleOutsideMainMenuClick);
-    window.addEventListener("resize", styleMobileMainMenu);
+    document.addEventListener("pointerdown", handleOutsideMainMenuClick, true);
+    document.addEventListener("click", runStyleUpdate, true);
+    window.addEventListener("resize", runStyleUpdate);
 
     return () => {
       observer.disconnect();
-      document.removeEventListener("mousedown", handleOutsideMainMenuClick);
-      document.removeEventListener("touchstart", handleOutsideMainMenuClick);
-      window.removeEventListener("resize", styleMobileMainMenu);
+      document.removeEventListener("pointerdown", handleOutsideMainMenuClick, true);
+      document.removeEventListener("click", runStyleUpdate, true);
+      window.removeEventListener("resize", runStyleUpdate);
     };
   }, []);
 
