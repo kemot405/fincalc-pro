@@ -758,10 +758,19 @@ export default function PorownanieInwestycji() {
   const [pdfProgress, setPdfProgress] = useState(0);
 
   useEffect(() => {
-    const menuLabelGroups = [["aktualności", "aktualnosci"], ["kalkulatory"], ["kursy"]];
-    const mobileMenuBackground = "#21130d";
+    const menuLabelGroups = [["aktualnosci"], ["kalkulatory"], ["kursy"]];
+    const mobileMenuBackground = "#17100c";
+    const mobileMenuText = "#cfe8c9";
 
     const isMobileViewport = () => window.matchMedia("(max-width: 767px)").matches;
+
+    const normalizeText = (value: string) =>
+      value
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
 
     const isVisible = (element: HTMLElement) => {
       const style = window.getComputedStyle(element);
@@ -776,21 +785,24 @@ export default function PorownanieInwestycji() {
       );
     };
 
-    const normalizeText = (value: string) => value.toLowerCase().trim();
+    const hasSolidBackground = (element: HTMLElement) => {
+      const background = window.getComputedStyle(element).backgroundColor;
+      return background !== "transparent" && background !== "rgba(0, 0, 0, 0)";
+    };
 
-    const getMenuItems = (): HTMLElement[] => {
+    const getMobileMenuItems = (): HTMLElement[] => {
       if (!isMobileViewport()) return [];
 
       return menuLabelGroups
         .map((group) => {
           const candidates = Array.from(
-            document.querySelectorAll<HTMLElement>("a, button, [role='menuitem'], li, span")
+            document.querySelectorAll<HTMLElement>("a[href], button, [role='menuitem']")
           ).filter((element) => {
             if (reportRef.current?.contains(element)) return false;
             if (!isVisible(element)) return false;
 
             const text = normalizeText(element.innerText || element.textContent || "");
-            return group.some((label) => text.includes(label));
+            return group.some((label) => text === label || text.startsWith(`${label} `));
           });
 
           return candidates.sort((a, b) => {
@@ -803,6 +815,8 @@ export default function PorownanieInwestycji() {
     };
 
     const getMobileMenuToggle = (): HTMLElement | null => {
+      if (!isMobileViewport()) return null;
+
       const toggles = Array.from(document.querySelectorAll<HTMLElement>("button, [role='button']")).filter(
         (element) => {
           if (reportRef.current?.contains(element)) return false;
@@ -810,10 +824,12 @@ export default function PorownanieInwestycji() {
 
           const rect = element.getBoundingClientRect();
           return (
-            rect.top <= 120 &&
-            rect.right >= window.innerWidth - 160 &&
-            rect.width <= 190 &&
-            rect.height <= 100
+            rect.top <= 180 &&
+            rect.right >= window.innerWidth - 130 &&
+            rect.width >= 36 &&
+            rect.width <= 110 &&
+            rect.height >= 36 &&
+            rect.height <= 110
           );
         }
       );
@@ -829,31 +845,42 @@ export default function PorownanieInwestycji() {
     };
 
     const getMobileMainMenuPanel = (): HTMLElement | null => {
-      const items = getMenuItems();
+      const items = getMobileMenuItems();
       if (items.length !== menuLabelGroups.length) return null;
 
       const toggle = getMobileMenuToggle();
-      const firstItemAncestors: HTMLElement[] = [];
+      const ancestors: HTMLElement[] = [];
       let current = items[0].parentElement;
 
       while (current && current !== document.body && current !== document.documentElement) {
-        firstItemAncestors.push(current);
+        ancestors.push(current);
         current = current.parentElement;
       }
 
-      const candidates = firstItemAncestors.filter((element) => {
+      const candidates = ancestors.filter((element) => {
         if (reportRef.current?.contains(element)) return false;
         if (toggle && element.contains(toggle)) return false;
         if (!items.every((item) => element.contains(item))) return false;
         if (!isVisible(element)) return false;
 
         const rect = element.getBoundingClientRect();
-        return rect.height >= 80 && rect.width >= 120;
+        const text = normalizeText(element.innerText || element.textContent || "");
+
+        return (
+          rect.top > 70 &&
+          rect.width >= 160 &&
+          rect.width <= window.innerWidth - 16 &&
+          rect.height >= 180 &&
+          !text.includes("fincalc pro")
+        );
       });
 
       if (!candidates.length) return null;
 
-      return candidates.sort((a, b) => {
+      const backgroundCandidates = candidates.filter(hasSolidBackground);
+      const source = backgroundCandidates.length ? backgroundCandidates : candidates;
+
+      return source.sort((a, b) => {
         const aRect = a.getBoundingClientRect();
         const bRect = b.getBoundingClientRect();
         const aArea = aRect.width * aRect.height;
@@ -867,32 +894,28 @@ export default function PorownanieInwestycji() {
       const panel = getMobileMainMenuPanel();
       if (!panel) return;
 
-      const panelRect = panel.getBoundingClientRect();
-      const elementsToStyle = [
-        panel,
-        ...Array.from(panel.querySelectorAll<HTMLElement>("div, nav, ul, ol, li")),
-      ].filter((element) => {
-        if (!isVisible(element)) return false;
+      panel.dataset.fincalcMobileMainMenu = "true";
+      panel.style.setProperty("background-color", mobileMenuBackground, "important");
+      panel.style.setProperty("background", mobileMenuBackground, "important");
+      Array.from(panel.querySelectorAll<HTMLElement>("a, button, [role='menuitem'], li, span")).forEach((element) => {
+        const text = normalizeText(element.innerText || element.textContent || "");
+        const isMenuText = menuLabelGroups.some((group) => group.some((label) => text === label || text.startsWith(`${label} `)));
 
-        const rect = element.getBoundingClientRect();
-        return (
-          rect.top >= panelRect.top - 1 &&
-          rect.left >= panelRect.left - 1 &&
-          rect.right <= panelRect.right + 1 &&
-          rect.bottom <= panelRect.bottom + 1
-        );
+        if (isMenuText) {
+          element.style.setProperty("color", mobileMenuText, "important");
+          element.style.setProperty("font-weight", "700", "important");
+        }
+
+        if (hasSolidBackground(element)) {
+          element.style.setProperty("background-color", mobileMenuBackground, "important");
+          element.style.setProperty("background", mobileMenuBackground, "important");
+        }
       });
-
-      elementsToStyle.forEach((element) => {
-        element.style.setProperty("background-color", mobileMenuBackground, "important");
-        element.style.setProperty("background", mobileMenuBackground, "important");
-      });
-
-      panel.style.setProperty("border-color", "rgba(250, 204, 21, 0.3)", "important");
-      panel.style.setProperty("box-shadow", "0 18px 40px rgba(0, 0, 0, 0.45)", "important");
     };
 
     const handleOutsideMainMenuClick = (event: PointerEvent) => {
+      if (!isMobileViewport()) return;
+
       const panel = getMobileMainMenuPanel();
       if (!panel) return;
 
@@ -906,22 +929,25 @@ export default function PorownanieInwestycji() {
       toggle?.click();
     };
 
-    const runStyleUpdate = () => window.requestAnimationFrame(styleMobileMainMenuPanel);
+    const scheduleStyleUpdate = () => {
+      window.requestAnimationFrame(styleMobileMainMenuPanel);
+      window.setTimeout(styleMobileMainMenuPanel, 80);
+    };
 
-    runStyleUpdate();
+    scheduleStyleUpdate();
 
-    const observer = new MutationObserver(runStyleUpdate);
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+    const observer = new MutationObserver(scheduleStyleUpdate);
+    observer.observe(document.body, { childList: true, subtree: true });
 
     document.addEventListener("pointerdown", handleOutsideMainMenuClick, true);
-    document.addEventListener("click", runStyleUpdate, true);
-    window.addEventListener("resize", runStyleUpdate);
+    document.addEventListener("click", scheduleStyleUpdate, true);
+    window.addEventListener("resize", scheduleStyleUpdate);
 
     return () => {
       observer.disconnect();
       document.removeEventListener("pointerdown", handleOutsideMainMenuClick, true);
-      document.removeEventListener("click", runStyleUpdate, true);
-      window.removeEventListener("resize", runStyleUpdate);
+      document.removeEventListener("click", scheduleStyleUpdate, true);
+      window.removeEventListener("resize", scheduleStyleUpdate);
     };
   }, []);
 
@@ -1343,8 +1369,8 @@ export default function PorownanieInwestycji() {
         <InfoHint text={hint} />
       </div>
       <div
-        className="grid gap-3"
-        style={{ gridTemplateColumns: `repeat(${results.length}, minmax(180px, 1fr))` }}
+        className="grid grid-cols-1 gap-3 md:[grid-template-columns:var(--result-columns)]"
+        style={{ "--result-columns": `repeat(${results.length}, minmax(180px, 1fr))` } as React.CSSProperties}
       >
         {results.map((result) => {
           const riskValue = riskType === "breakEven"
@@ -1687,10 +1713,10 @@ export default function PorownanieInwestycji() {
                 <h3 className="mb-4 text-lg font-semibold text-yellow-300">Porównanie wyników inwestycji</h3>
 
                 <div className="overflow-x-auto">
-                  <div className="min-w-[820px]">
+                  <div className="min-w-0 md:min-w-[820px]">
                     <div
-                      className="mb-5 grid gap-3"
-                      style={{ gridTemplateColumns: `repeat(${results.length}, minmax(180px, 1fr))` }}
+                      className="mb-5 grid grid-cols-1 gap-3 md:[grid-template-columns:var(--result-columns)]"
+                      style={{ "--result-columns": `repeat(${results.length}, minmax(180px, 1fr))` } as React.CSSProperties}
                     >
                       {results.map((result) => (
                         <div
