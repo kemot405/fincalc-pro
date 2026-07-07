@@ -139,7 +139,7 @@ const typeLabels: Record<InvestmentType, string> = {
   shortTermRental: "Wynajem krótkoterminowy",
   longTermRental: "Wynajem długoterminowy",
   mobileAssetRental: "Wynajem aktywów ruchomych (współczynnik wykorzystania m-c %)",
-  equipmentRental: "Wynajem sprzętu, narzędzi (dzienna ilość wynajmów)",
+  equipmentRental: "Wynajem sprzętu, narzędzi (dzienna ilość urządzeń w wynajmie)",
   dailyServices: "Usługi - dzienna ilość klientów",
   monthlyServices: "Usługi - miesięczna ilość klientów",
   trade: "Handel",
@@ -170,8 +170,6 @@ const typeHelp: Record<InvestmentType, { description: string; fields: string[] }
       "Wartość początkowa inwestycji",
       "Ilość mieszkań",
       "Przychody miesięczne z najmu",
-      "Ilość dni aktywnych biznesowo",
-      "Współczynnik wykorzystania (%)",
       "Koszty roczne",
       "Koszty stałe miesięczne",
       "Rodzaj opodatkowania",
@@ -197,11 +195,11 @@ const typeHelp: Record<InvestmentType, { description: string; fields: string[] }
     fields: [
       "Nazwa inwestycji",
       "Wartość początkowa inwestycji",
-      "Średnia dzienna ilość wynajmów",
-      "Średnia cena wynajmu",
+      "Średnia dzienna ilość urządzeń w wynajmie",
+      "Średnia cena pojedynczego wynajmu na dobę",
       "Ilość dni w miesiącu aktywnych dla biznesu",
       "Średnia ilość dób pojedynczego wynajmu",
-      "Średni koszt obsługi wynajmu",
+      "Średni koszt obsługi pojedynczego wynajmu",
       "Koszty stałe miesięczne",
       "Rodzaj opodatkowania",
     ],
@@ -348,7 +346,6 @@ function getAverageInflationFromForecast(years: number, fallback: number): numbe
 function getWorkingDaysForRisk(input: InvestmentInput): number {
   if (
     input.type === "shortTermRental" ||
-    input.type === "longTermRental" ||
     input.type === "mobileAssetRental" ||
     input.type === "equipmentRental" ||
     input.type === "dailyServices" ||
@@ -570,8 +567,9 @@ function calculateMonthlyModel(input: InvestmentInput) {
     }
 
     case "longTermRental": {
-      const activeDaysFactor = Math.min(Math.max(activeDays / 30, 0), 1);
-      const revenue = input.monthlyRevenue * assetCount * utilization * activeDaysFactor;
+      // Wynajem długoterminowy jest liczony jako pełny miesięczny czynsz za lokal.
+      // Nie stosujemy współczynnika wykorzystania ani dni aktywnych biznesowo.
+      const revenue = input.monthlyRevenue * assetCount;
       const variableCosts = Math.max(input.annualCosts, 0) / 12;
       return { revenue, variableCosts, fixedCosts: input.fixedMonthlyCosts };
     }
@@ -585,8 +583,11 @@ function calculateMonthlyModel(input: InvestmentInput) {
     }
 
     case "equipmentRental": {
-      const rentalsCount = input.dailyCustomers * activeDays;
-      const rentedDays = rentalsCount * averageRentalDays;
+      // dailyCustomers = średnia dzienna liczba urządzeń aktywnie będących w wynajmie.
+      // averageRentalDays służy tu wyłącznie do oszacowania liczby obsług po zakończonym wynajmie.
+      const activeRentedUnitsPerDay = Math.max(input.dailyCustomers, 0);
+      const rentedDays = activeRentedUnitsPerDay * activeDays;
+      const rentalsCount = rentedDays / averageRentalDays;
       const revenue = rentedDays * input.averagePrice;
       const variableCosts = rentalsCount * input.variableCostPerRental;
       return { revenue, variableCosts, fixedCosts: input.fixedMonthlyCosts };
@@ -716,6 +717,7 @@ function KpiValue({
 
 export default function PorownanieInwestycji() {
   const reportRef = useRef<HTMLDivElement | null>(null);
+  const addTypePickerRef = useRef<HTMLDivElement | null>(null);
   const [, startTransition] = useTransition();
 
   const [globalYears, setGlobalYears] = useState<number>(10);
@@ -753,6 +755,8 @@ export default function PorownanieInwestycji() {
   const [showAddTypePicker, setShowAddTypePicker] = useState(false);
   const [valueViewMode, setValueViewMode] = useState<ViewMode>("chart");
   const [percentViewMode, setPercentViewMode] = useState<ViewMode>("chart");
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [pdfProgress, setPdfProgress] = useState(0);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -784,6 +788,28 @@ export default function PorownanieInwestycji() {
 
     loadDefaults();
   }, []);
+
+  useEffect(() => {
+    if (!showAddTypePicker) return;
+
+    function handleClickOutside(event: MouseEvent | TouchEvent) {
+      if (
+        addTypePickerRef.current &&
+        event.target instanceof Node &&
+        !addTypePickerRef.current.contains(event.target)
+      ) {
+        setShowAddTypePicker(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, [showAddTypePicker]);
 
   const results = useMemo(
     () => calculatedInvestments.map((investment) => calculateInvestment(investment, calculatedYears, calculatedInflationAvg, taxDefaults)),
@@ -929,53 +955,69 @@ export default function PorownanieInwestycji() {
   };
 
   const handleDownloadPdf = async () => {
-    if (!reportRef.current) return;
+    if (!reportRef.current || isExportingPdf) return;
 
-    const html2canvas = (await import("html2canvas")).default;
-    const { jsPDF } = await import("jspdf");
+    setIsExportingPdf(true);
+    setPdfProgress(1);
 
-    const pdf = new jsPDF("p", "mm", "a4");
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const margin = 8;
-    const availableWidth = pageWidth - margin * 2;
-    const availableHeight = pageHeight - margin * 2;
+    try {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
 
-    const sections = Array.from(
-      reportRef.current.querySelectorAll(".pdf-section")
-    ) as HTMLElement[];
+      const html2canvas = (await import("html2canvas")).default;
+      const { jsPDF } = await import("jspdf");
+      setPdfProgress(15);
 
-    const header = reportRef.current.querySelector(".pdf-header") as HTMLElement | null;
-    const elementsToRender = header ? [header, ...sections] : sections;
+      const pdf = new jsPDF("p", "mm", "a4");
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 6;
+      const availableWidth = pageWidth - margin * 2;
+      const availableHeight = pageHeight - margin * 2;
+      const sourceWidth = Math.max(reportRef.current.scrollWidth, reportRef.current.offsetWidth);
+      const sourceHeight = Math.max(reportRef.current.scrollHeight, reportRef.current.offsetHeight);
+      const exportViewportWidth = Math.max(sourceWidth, 1440);
 
-    for (let index = 0; index < elementsToRender.length; index++) {
-      const element = elementsToRender[index];
-
-      const canvas = await html2canvas(element, {
-        scale: 2,
+      const canvas = await html2canvas(reportRef.current, {
+        scale: 1.5,
         backgroundColor: "#111827",
         useCORS: true,
-        windowWidth: reportRef.current.scrollWidth,
+        windowWidth: exportViewportWidth,
+        windowHeight: sourceHeight,
+        scrollX: 0,
+        scrollY: -window.scrollY,
+        ignoreElements: (element) => element.classList?.contains("no-pdf-export") ?? false,
       });
+      setPdfProgress(45);
 
-      const imgData = canvas.toDataURL("image/png");
+      const imgData = canvas.toDataURL("image/jpeg", 0.92);
+      const imgWidth = availableWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-      let imgWidth = availableWidth;
-      let imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let renderedHeight = 0;
+      let pageIndex = 0;
 
-      if (imgHeight > availableHeight) {
-        const heightScale = availableHeight / imgHeight;
-        imgWidth = imgWidth * heightScale;
-        imgHeight = availableHeight;
+      while (renderedHeight < imgHeight) {
+        if (pageIndex > 0) pdf.addPage();
+
+        pdf.addImage(imgData, "JPEG", margin, margin - renderedHeight, imgWidth, imgHeight);
+        renderedHeight += availableHeight;
+        pageIndex += 1;
+
+        const progress = Math.min(95, 45 + Math.round((renderedHeight / imgHeight) * 50));
+        setPdfProgress(progress);
+        await new Promise((resolve) => requestAnimationFrame(resolve));
       }
 
-      if (index > 0) pdf.addPage();
-
-      const x = margin + (availableWidth - imgWidth) / 2;
-      pdf.addImage(imgData, "PNG", x, margin, imgWidth, imgHeight);
+      pdf.save("porownanie-inwestycji-fincalc-pro.pdf");
+      setPdfProgress(100);
+    } catch (error) {
+      console.error("Nie udało się wygenerować PDF:", error);
+    } finally {
+      window.setTimeout(() => {
+        setIsExportingPdf(false);
+        setPdfProgress(0);
+      }, 900);
     }
-
-    pdf.save("porownanie-inwestycji-fincalc-pro.pdf");
   };
 
   const baseInput = (
@@ -1064,9 +1106,7 @@ export default function PorownanieInwestycji() {
         <>
           {commonNameAndValue}
           {baseInput(investment, "assetCount", "Ilość mieszkań", "Liczba mieszkań lub lokali objętych analizą.")}
-          {baseInput(investment, "monthlyRevenue", "Przychody miesięczne z najmu", "Miesięczny czynsz lub średni przychód z najmu dla jednego mieszkania.")}
-          {baseInput(investment, "workingDaysPerMonth", "Ilość dni aktywnych biznesowo", "Liczba dni w miesiącu, w których lokal jest dostępny i może generować przychód.")}
-          {baseInput(investment, "occupancyRate", "Współczynnik wykorzystania (%)", `Procent dostępnego czasu, w którym mieszkanie generuje przychód. ${percentHint}`)}
+          {baseInput(investment, "monthlyRevenue", "Przychody miesięczne z najmu", "Miesięczny czynsz lub średni przychód z najmu dla jednego mieszkania. W kalkulacji wynajem długoterminowy jest liczony za pełny miesiąc.")}
           {baseInput(investment, "annualCosts", "Koszty roczne", "Roczne koszty utrzymania, remontów, ubezpieczenia i administracji.")}
           {baseInput(investment, "fixedMonthlyCosts", "Koszty stałe miesięczne", "Stałe koszty miesięczne, jeśli nie są ujęte w kosztach rocznych.")}
           {taxSelect}
@@ -1094,11 +1134,11 @@ export default function PorownanieInwestycji() {
       return (
         <>
           {commonNameAndValue}
-          {baseInput(investment, "dailyCustomers", "Średnia dzienna ilość wynajmów", "Średnia liczba wynajmów realizowanych dziennie.")}
-          {baseInput(investment, "averagePrice", "Średnia cena wynajmu", "Cena za jedną dobę wynajmu sprzętu lub narzędzia.")}
+          {baseInput(investment, "dailyCustomers", "Średnia dzienna ilość urządzeń w wynajmie", "Średnia liczba urządzeń lub sprzętów aktywnie wynajętych danego dnia.")}
+          {baseInput(investment, "averagePrice", "Średnia cena pojedynczego wynajmu na dobę", "Cena za jedną dobę wynajmu jednego urządzenia, sprzętu lub narzędzia.")}
           {baseInput(investment, "workingDaysPerMonth", "Ilość dni w miesiącu aktywnych dla biznesu", "Liczba dni w miesiącu, w których biznes prowadzi wynajem.")}
-          {baseInput(investment, "averageRentalDays", "Średnia ilość dób pojedynczego wynajmu", "Średni czas trwania jednego wynajmu.")}
-          {baseInput(investment, "variableCostPerRental", "Średni koszt obsługi wynajmu", "Serwis, przygotowanie, obsługa lub przekazanie jednego wynajmu.")}
+          {baseInput(investment, "averageRentalDays", "Średnia ilość dób pojedynczego wynajmu", "Średni czas trwania jednego wynajmu. Pole służy do oszacowania liczby zakończonych wynajmów i kosztów obsługi sprzętu po wynajmie.")}
+          {baseInput(investment, "variableCostPerRental", "Średni koszt obsługi pojedynczego wynajmu", "Serwis, przygotowanie, obsługa lub przekazanie sprzętu po jednym zakończonym wynajmie.")}
           {baseInput(investment, "fixedMonthlyCosts", "Koszty stałe miesięczne", "Stałe koszty miesięczne działalności.")}
           {taxSelect}
         </>
@@ -1337,10 +1377,27 @@ export default function PorownanieInwestycji() {
           <button
             type="button"
             onClick={handleDownloadPdf}
-            className="absolute right-0 top-0 hidden items-center gap-2 rounded-lg bg-gray-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-500 md:flex"
+            disabled={isExportingPdf}
+            className={`no-pdf-export absolute right-0 top-0 hidden min-w-[150px] flex-col items-stretch gap-1 rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-md transition md:flex ${
+              isExportingPdf ? "bg-gray-600 cursor-wait" : "bg-green-600 hover:bg-green-700"
+            }`}
           >
-            <span className="text-xs font-bold">PDF</span>
-            <span>Eksport</span>
+            <span className="flex items-center justify-center gap-2">
+              {isExportingPdf ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+              ) : (
+                <span className="text-xs font-bold">PDF</span>
+              )}
+              <span>{isExportingPdf ? `Eksport ${pdfProgress}%` : "Eksport PDF"}</span>
+            </span>
+            {isExportingPdf && (
+              <span className="h-1.5 overflow-hidden rounded-full bg-white/25">
+                <span
+                  className="block h-full rounded-full bg-white transition-all duration-200"
+                  style={{ width: `${pdfProgress}%` }}
+                />
+              </span>
+            )}
           </button>
         </div>
 
@@ -1401,7 +1458,7 @@ export default function PorownanieInwestycji() {
                           <button
                             type="button"
                             onClick={() => removeInvestment(investment.id)}
-                            className="rounded-lg border border-red-400/40 px-3 py-1 text-sm font-semibold text-red-200 transition hover:bg-red-400/10"
+                            className="hidden rounded-lg border border-red-400/40 px-3 py-1 text-sm font-semibold text-red-200 transition hover:bg-red-400/10 sm:inline-flex"
                           >
                             Usuń
                           </button>
@@ -1424,15 +1481,24 @@ export default function PorownanieInwestycji() {
                     {expandedPanels[investment.id] && (
                       <div className="grid grid-cols-1 gap-4 p-4">
                         {renderFields(investment)}
+                        {investments.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeInvestment(investment.id)}
+                            className="w-full rounded-lg border border-red-400/40 px-4 py-2 text-sm font-semibold text-red-200 transition hover:bg-red-400/10 sm:hidden"
+                          >
+                            Usuń tę inwestycję
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
                 ))}
               </div>
 
-              <div className="mt-5">
+              <div ref={addTypePickerRef} className="mt-5">
                 {showAddTypePicker && (
-                  <div className="mb-4 rounded-2xl border border-yellow-600/30 bg-gray-900/25 p-4">
+                  <div className="mb-4 rounded-2xl border border-yellow-600/30 bg-[#21130d] p-4 shadow-xl">
                     <div className="mb-3 text-sm font-bold text-yellow-300">Wybierz rodzaj inwestycji</div>
                     <div className="grid grid-cols-1 gap-2">
                       {(Object.keys(typeLabels) as InvestmentType[]).map((type) => (
