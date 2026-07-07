@@ -756,6 +756,16 @@ export default function PorownanieInwestycji() {
   const [percentViewMode, setPercentViewMode] = useState<ViewMode>("chart");
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [pdfProgress, setPdfProgress] = useState(0);
+  const [isMobileView, setIsMobileView] = useState(false);
+
+  useEffect(() => {
+    const updateMobileView = () => setIsMobileView(window.matchMedia("(max-width: 767px)").matches);
+
+    updateMobileView();
+    window.addEventListener("resize", updateMobileView);
+
+    return () => window.removeEventListener("resize", updateMobileView);
+  }, []);
 
   useEffect(() => {
     const menuLabelGroups = [["aktualnosci"], ["kalkulatory"], ["kursy"]];
@@ -814,11 +824,11 @@ export default function PorownanieInwestycji() {
         .filter((element): element is HTMLElement => Boolean(element));
     };
 
-    const getMobileMenuToggle = (): HTMLElement | null => {
-      if (!isMobileViewport()) return null;
+    const getMobileMenuToggleCandidates = (): HTMLElement[] => {
+      if (!isMobileViewport()) return [];
 
-      const toggles = Array.from(document.querySelectorAll<HTMLElement>("button, [role='button']")).filter(
-        (element) => {
+      return Array.from(document.querySelectorAll<HTMLElement>("button, [role='button']"))
+        .filter((element) => {
           if (reportRef.current?.contains(element)) return false;
           if (!isVisible(element)) return false;
 
@@ -831,17 +841,18 @@ export default function PorownanieInwestycji() {
             rect.height >= 36 &&
             rect.height <= 110
           );
-        }
-      );
+        })
+        .sort((a, b) => {
+          const aRect = a.getBoundingClientRect();
+          const bRect = b.getBoundingClientRect();
+          return aRect.top - bRect.top || bRect.right - aRect.right;
+        });
+    };
 
+    const getMobileMenuToggle = (): HTMLElement | null => {
+      const toggles = getMobileMenuToggleCandidates();
       const expandedToggle = toggles.find((element) => element.getAttribute("aria-expanded") === "true");
-      if (expandedToggle) return expandedToggle;
-
-      return toggles.sort((a, b) => {
-        const aRect = a.getBoundingClientRect();
-        const bRect = b.getBoundingClientRect();
-        return aRect.top - bRect.top || bRect.right - aRect.right;
-      })[0] ?? null;
+      return expandedToggle ?? toggles[0] ?? null;
     };
 
     const getMobileMainMenuPanel = (): HTMLElement | null => {
@@ -913,20 +924,41 @@ export default function PorownanieInwestycji() {
       });
     };
 
-    const handleOutsideMainMenuClick = (event: PointerEvent) => {
-      if (!isMobileViewport()) return;
+    let closingMainMenuFromOutside = false;
 
-      const panel = getMobileMainMenuPanel();
-      if (!panel) return;
+    const closeMobileMainMenu = () => {
+      const toggle = getMobileMenuToggle();
+      if (!toggle) return;
+
+      closingMainMenuFromOutside = true;
+      window.setTimeout(() => {
+        toggle.click();
+
+        window.setTimeout(() => {
+          closingMainMenuFromOutside = false;
+          scheduleStyleUpdate();
+        }, 120);
+      }, 0);
+    };
+
+    const handleOutsideMainMenuClick = (event: MouseEvent | PointerEvent | TouchEvent) => {
+      if (!isMobileViewport() || closingMainMenuFromOutside) return;
+
+      const panel =
+        document.querySelector<HTMLElement>("[data-fincalc-mobile-main-menu='true']") ??
+        getMobileMainMenuPanel();
+      if (!panel || !isVisible(panel)) return;
 
       const target = event.target;
       if (!(target instanceof Node)) return;
       if (panel.contains(target)) return;
 
-      const toggle = getMobileMenuToggle();
-      if (toggle?.contains(target)) return;
+      const toggles = getMobileMenuToggleCandidates();
+      if (toggles.some((toggle) => toggle.contains(target))) return;
 
-      toggle?.click();
+      event.preventDefault();
+      event.stopPropagation();
+      closeMobileMainMenu();
     };
 
     const scheduleStyleUpdate = () => {
@@ -940,12 +972,16 @@ export default function PorownanieInwestycji() {
     observer.observe(document.body, { childList: true, subtree: true });
 
     document.addEventListener("pointerdown", handleOutsideMainMenuClick, true);
+    document.addEventListener("touchstart", handleOutsideMainMenuClick, true);
+    document.addEventListener("click", handleOutsideMainMenuClick, true);
     document.addEventListener("click", scheduleStyleUpdate, true);
     window.addEventListener("resize", scheduleStyleUpdate);
 
     return () => {
       observer.disconnect();
       document.removeEventListener("pointerdown", handleOutsideMainMenuClick, true);
+      document.removeEventListener("touchstart", handleOutsideMainMenuClick, true);
+      document.removeEventListener("click", handleOutsideMainMenuClick, true);
       document.removeEventListener("click", scheduleStyleUpdate, true);
       window.removeEventListener("resize", scheduleStyleUpdate);
     };
@@ -1382,15 +1418,19 @@ export default function PorownanieInwestycji() {
                 : null;
 
           return (
-            <KpiValue
-              key={`${result.id}-${label}`}
-              value={renderValue(result)}
-              className={
-                riskType && riskValue !== null
-                  ? riskTone(riskValue, riskType)
-                  : "border-yellow-600/30 bg-[#243424] text-yellow-400"
-              }
-            />
+            <div key={`${result.id}-${label}`} className="flex flex-col gap-2">
+              <div className="md:hidden rounded-xl border border-green-500/25 bg-gray-900/30 px-3 py-2 text-sm font-bold text-[#cfe8c9]">
+                {result.name}
+              </div>
+              <KpiValue
+                value={renderValue(result)}
+                className={
+                  riskType && riskValue !== null
+                    ? riskTone(riskValue, riskType)
+                    : "border-yellow-600/30 bg-[#243424] text-yellow-400"
+                }
+              />
+            </div>
           );
         })}
       </div>
@@ -1406,6 +1446,15 @@ export default function PorownanieInwestycji() {
     valueType: "amount" | "percent" | "number"
   ) => {
     const isPaybackChart = dataKey === "paybackYear";
+    const isMobilePaybackChart = isPaybackChart && isMobileView;
+    const chartLayout = isPaybackChart && !isMobilePaybackChart ? "vertical" : "horizontal";
+    const chartMargin = {
+      top: 34,
+      right: isPaybackChart && !isMobilePaybackChart ? 90 : 16,
+      left: isPaybackChart && !isMobilePaybackChart ? 90 : 0,
+      bottom: isMobilePaybackChart ? 38 : 8,
+    };
+    const chartHeight = isPaybackChart && !isMobilePaybackChart ? 360 : 340;
     const chartData = isPaybackChart
       ? [...comparisonData].sort((a, b) => {
           const aValue = a.paybackYear || Number.POSITIVE_INFINITY;
@@ -1418,14 +1467,14 @@ export default function PorownanieInwestycji() {
       <Card className="rounded-2xl border border-yellow-600/30 bg-[#3c2a20] p-6">
         <CardContent>
           <h3 className="mb-4 text-lg font-semibold text-yellow-300">{title}</h3>
-          <ResponsiveContainer width="100%" height={isPaybackChart ? 360 : 340}>
+          <ResponsiveContainer width="100%" height={chartHeight}>
             <BarChart
               data={chartData}
-              layout={isPaybackChart ? "vertical" : "horizontal"}
-              margin={{ top: 34, right: isPaybackChart ? 90 : 28, left: isPaybackChart ? 90 : 0, bottom: 8 }}
+              layout={chartLayout}
+              margin={chartMargin}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#ffaa00" />
-              {isPaybackChart ? (
+              {isPaybackChart && !isMobilePaybackChart ? (
                 <>
                   <XAxis
                     type="number"
@@ -1443,10 +1492,19 @@ export default function PorownanieInwestycji() {
                 </>
               ) : (
                 <>
-                  <XAxis dataKey="name" stroke="#fff" tick={{ fill: "#fff", fontSize: 12 }} />
+                  <XAxis
+                    dataKey="name"
+                    stroke="#fff"
+                    tick={{ fill: "#fff", fontSize: isMobilePaybackChart ? 10 : 12 }}
+                    interval={0}
+                    angle={isMobilePaybackChart ? -20 : 0}
+                    textAnchor={isMobilePaybackChart ? "end" : "middle"}
+                    height={isMobilePaybackChart ? 58 : 30}
+                  />
                   <YAxis
                     stroke="#fff"
                     tick={{ fill: "#fff", fontSize: 12 }}
+                    domain={isMobilePaybackChart ? [0, "dataMax + 1"] : undefined}
                     tickFormatter={(value) =>
                       valueType === "percent"
                         ? `${Number(value).toFixed(0)}%`
@@ -1470,7 +1528,7 @@ export default function PorownanieInwestycji() {
                 <CustomBarLabel
                 {...props}
                 type={valueType}
-                layout={isPaybackChart ? "vertical" : "horizontal"}
+                layout={isPaybackChart && !isMobilePaybackChart ? "vertical" : "horizontal"}
                 />
                  )}
                 />
@@ -1715,7 +1773,7 @@ export default function PorownanieInwestycji() {
                 <div className="overflow-x-auto">
                   <div className="min-w-0 md:min-w-[820px]">
                     <div
-                      className="mb-5 grid grid-cols-1 gap-3 md:[grid-template-columns:var(--result-columns)]"
+                      className="mb-5 hidden gap-3 md:grid md:[grid-template-columns:var(--result-columns)]"
                       style={{ "--result-columns": `repeat(${results.length}, minmax(180px, 1fr))` } as React.CSSProperties}
                     >
                       {results.map((result) => (
