@@ -717,7 +717,6 @@ function KpiValue({
 
 export default function PorownanieInwestycji() {
   const reportRef = useRef<HTMLDivElement | null>(null);
-  const addTypePickerRef = useRef<HTMLDivElement | null>(null);
   const [, startTransition] = useTransition();
 
   const [globalYears, setGlobalYears] = useState<number>(10);
@@ -789,27 +788,6 @@ export default function PorownanieInwestycji() {
     loadDefaults();
   }, []);
 
-  useEffect(() => {
-    if (!showAddTypePicker) return;
-
-    function handleClickOutside(event: MouseEvent | TouchEvent) {
-      if (
-        addTypePickerRef.current &&
-        event.target instanceof Node &&
-        !addTypePickerRef.current.contains(event.target)
-      ) {
-        setShowAddTypePicker(false);
-      }
-    }
-
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("touchstart", handleClickOutside);
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("touchstart", handleClickOutside);
-    };
-  }, [showAddTypePicker]);
 
   const results = useMemo(
     () => calculatedInvestments.map((investment) => calculateInvestment(investment, calculatedYears, calculatedInflationAvg, taxDefaults)),
@@ -1453,7 +1431,7 @@ export default function PorownanieInwestycji() {
                         </span>
                       </button>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
                         {investments.length > 1 && (
                           <button
                             type="button"
@@ -1475,30 +1453,30 @@ export default function PorownanieInwestycji() {
                         >
                           {expandedPanels[investment.id] ? "Zwiń" : "Rozwiń"}
                         </button>
+                        {investments.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeInvestment(investment.id)}
+                            className="rounded-lg border border-red-400/40 px-3 py-1 text-sm font-semibold text-red-200 transition hover:bg-red-400/10 sm:hidden"
+                          >
+                            Usuń
+                          </button>
+                        )}
                       </div>
                     </div>
 
                     {expandedPanels[investment.id] && (
                       <div className="grid grid-cols-1 gap-4 p-4">
                         {renderFields(investment)}
-                        {investments.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeInvestment(investment.id)}
-                            className="w-full rounded-lg border border-red-400/40 px-4 py-2 text-sm font-semibold text-red-200 transition hover:bg-red-400/10 sm:hidden"
-                          >
-                            Usuń tę inwestycję
-                          </button>
-                        )}
                       </div>
                     )}
                   </div>
                 ))}
               </div>
 
-              <div ref={addTypePickerRef} className="mt-5">
+              <div className="mt-5">
                 {showAddTypePicker && (
-                  <div className="mb-4 rounded-2xl border border-yellow-600/30 bg-[#21130d] p-4 shadow-xl">
+                  <div className="mb-4 rounded-2xl border border-yellow-600/30 bg-gray-900/25 p-4">
                     <div className="mb-3 text-sm font-bold text-yellow-300">Wybierz rodzaj inwestycji</div>
                     <div className="grid grid-cols-1 gap-2">
                       {(Object.keys(typeLabels) as InvestmentType[]).map((type) => (
