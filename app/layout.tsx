@@ -1,6 +1,7 @@
 import "./globals.css";
 import Link from "next/link";
 import React from "react";
+import MobileMenu from "./MobileMenu";
 
 export const metadata = {
   title: "FinCalc Pro",
@@ -90,32 +91,7 @@ export default function RootLayout({
             </Link>
           </nav>
 
-          <details className="relative md:hidden">
-            <summary className="list-none cursor-pointer rounded-lg border border-green-400/40 bg-gray-700 px-3 py-2 text-lg font-bold text-white">
-              ☰
-            </summary>
-
-            <div className="absolute right-0 mt-3 w-64 rounded-2xl border border-yellow-600/30 bg-[#34241b] p-3 shadow-2xl">
-              <div className="flex flex-col gap-2">
-                {menuItems.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className="rounded-lg px-4 py-3 text-sm font-semibold text-green-100 hover:bg-green-900/40"
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-
-                <Link
-                  href="#login"
-                  className="rounded-lg px-4 py-3 text-sm font-semibold text-orange-400 hover:bg-green-900/40"
-                >
-                  Zaloguj się
-                </Link>
-              </div>
-            </div>
-          </details>
+          <MobileMenu menuItems={menuItems} />
         </header>
 
         <main>{children}</main>
