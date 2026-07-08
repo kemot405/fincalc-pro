@@ -771,6 +771,9 @@ export default function PorownanieInwestycji() {
     const menuLabelGroups = [["aktualnosci"], ["kalkulatory"], ["kursy"]];
     const mobileMenuBackground = "#17100c";
     const mobileMenuText = "#cfe8c9";
+    let outsideClickOverlay: HTMLDivElement | null = null;
+    let lastMobileMenuToggle: HTMLElement | null = null;
+    let closingMainMenuFromOutside = false;
 
     const isMobileViewport = () => window.matchMedia("(max-width: 767px)").matches;
 
@@ -834,12 +837,12 @@ export default function PorownanieInwestycji() {
 
           const rect = element.getBoundingClientRect();
           return (
-            rect.top <= 180 &&
-            rect.right >= window.innerWidth - 130 &&
+            rect.top <= 190 &&
+            rect.right >= window.innerWidth - 140 &&
             rect.width >= 36 &&
-            rect.width <= 110 &&
+            rect.width <= 120 &&
             rect.height >= 36 &&
-            rect.height <= 110
+            rect.height <= 120
           );
         })
         .sort((a, b) => {
@@ -851,8 +854,13 @@ export default function PorownanieInwestycji() {
 
     const getMobileMenuToggle = (): HTMLElement | null => {
       const toggles = getMobileMenuToggleCandidates();
+      const rememberedToggle =
+        lastMobileMenuToggle && isVisible(lastMobileMenuToggle) && toggles.includes(lastMobileMenuToggle)
+          ? lastMobileMenuToggle
+          : null;
       const expandedToggle = toggles.find((element) => element.getAttribute("aria-expanded") === "true");
-      return expandedToggle ?? toggles[0] ?? null;
+
+      return expandedToggle ?? rememberedToggle ?? toggles[0] ?? null;
     };
 
     const getMobileMainMenuPanel = (): HTMLElement | null => {
@@ -901,21 +909,143 @@ export default function PorownanieInwestycji() {
       })[0];
     };
 
+    const removeOutsideClickOverlay = () => {
+      outsideClickOverlay?.remove();
+      outsideClickOverlay = null;
+    };
+
+    const closeMobileMainMenu = () => {
+      const toggle = getMobileMenuToggle();
+
+      closingMainMenuFromOutside = true;
+      removeOutsideClickOverlay();
+
+      window.setTimeout(() => {
+        if (toggle) {
+          toggle.dispatchEvent(
+            new MouseEvent("click", {
+              bubbles: true,
+              cancelable: true,
+              view: window,
+            })
+          );
+        } else {
+          document.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: "Escape",
+              code: "Escape",
+              bubbles: true,
+            })
+          );
+        }
+
+        window.setTimeout(() => {
+          closingMainMenuFromOutside = false;
+          scheduleStyleUpdate();
+        }, 160);
+      }, 0);
+    };
+
+    const showOutsideClickOverlay = (panel: HTMLElement) => {
+      const closeFromOverlay = (event: Event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!closingMainMenuFromOutside) closeMobileMainMenu();
+      };
+
+      if (!outsideClickOverlay) {
+        outsideClickOverlay = document.createElement("div");
+        outsideClickOverlay.dataset.fincalcMobileMenuOutside = "true";
+        outsideClickOverlay.setAttribute("aria-hidden", "true");
+
+        ["top", "right", "bottom", "left"].forEach((zoneName) => {
+          const zone = document.createElement("div");
+          zone.dataset.fincalcMobileMenuOutsideZone = zoneName;
+          zone.addEventListener("pointerdown", closeFromOverlay, true);
+          zone.addEventListener("touchstart", closeFromOverlay, true);
+          zone.addEventListener("click", closeFromOverlay, true);
+          outsideClickOverlay?.appendChild(zone);
+        });
+
+        document.body.appendChild(outsideClickOverlay);
+      }
+
+      const rect = panel.getBoundingClientRect();
+      outsideClickOverlay.style.setProperty("position", "fixed", "important");
+      outsideClickOverlay.style.setProperty("inset", "0", "important");
+      outsideClickOverlay.style.setProperty("z-index", "10010", "important");
+      outsideClickOverlay.style.setProperty("background", "transparent", "important");
+      outsideClickOverlay.style.setProperty("pointer-events", "none", "important");
+
+      const zones = Array.from(outsideClickOverlay.children) as HTMLElement[];
+      const commonZoneStyles = (zone: HTMLElement) => {
+        zone.style.setProperty("position", "fixed", "important");
+        zone.style.setProperty("background", "transparent", "important");
+        zone.style.setProperty("pointer-events", "auto", "important");
+      };
+
+      zones.forEach(commonZoneStyles);
+
+      const topZone = zones.find((zone) => zone.dataset.fincalcMobileMenuOutsideZone === "top");
+      const rightZone = zones.find((zone) => zone.dataset.fincalcMobileMenuOutsideZone === "right");
+      const bottomZone = zones.find((zone) => zone.dataset.fincalcMobileMenuOutsideZone === "bottom");
+      const leftZone = zones.find((zone) => zone.dataset.fincalcMobileMenuOutsideZone === "left");
+
+      if (topZone) {
+        topZone.style.setProperty("left", "0", "important");
+        topZone.style.setProperty("top", "0", "important");
+        topZone.style.setProperty("width", "100vw", "important");
+        topZone.style.setProperty("height", `${Math.max(rect.top, 0)}px`, "important");
+      }
+
+      if (bottomZone) {
+        bottomZone.style.setProperty("left", "0", "important");
+        bottomZone.style.setProperty("top", `${Math.max(rect.bottom, 0)}px`, "important");
+        bottomZone.style.setProperty("width", "100vw", "important");
+        bottomZone.style.setProperty("height", `${Math.max(window.innerHeight - rect.bottom, 0)}px`, "important");
+      }
+
+      if (leftZone) {
+        leftZone.style.setProperty("left", "0", "important");
+        leftZone.style.setProperty("top", `${Math.max(rect.top, 0)}px`, "important");
+        leftZone.style.setProperty("width", `${Math.max(rect.left, 0)}px`, "important");
+        leftZone.style.setProperty("height", `${Math.max(rect.height, 0)}px`, "important");
+      }
+
+      if (rightZone) {
+        rightZone.style.setProperty("left", `${Math.max(rect.right, 0)}px`, "important");
+        rightZone.style.setProperty("top", `${Math.max(rect.top, 0)}px`, "important");
+        rightZone.style.setProperty("width", `${Math.max(window.innerWidth - rect.right, 0)}px`, "important");
+        rightZone.style.setProperty("height", `${Math.max(rect.height, 0)}px`, "important");
+      }
+
+      const panelPosition = window.getComputedStyle(panel).position;
+      if (panelPosition === "static") {
+        panel.style.setProperty("position", "relative", "important");
+      }
+      panel.style.setProperty("z-index", "10020", "important");
+    };
+
     const styleMobileMainMenuPanel = () => {
+      if (!isMobileViewport()) {
+        removeOutsideClickOverlay();
+        return;
+      }
+
       const panel = getMobileMainMenuPanel();
-      if (!panel) return;
+      if (!panel) {
+        removeOutsideClickOverlay();
+        return;
+      }
 
       panel.dataset.fincalcMobileMainMenu = "true";
       panel.style.setProperty("background-color", mobileMenuBackground, "important");
       panel.style.setProperty("background", mobileMenuBackground, "important");
-      Array.from(panel.querySelectorAll<HTMLElement>("a, button, [role='menuitem'], li, span")).forEach((element) => {
-        const text = normalizeText(element.innerText || element.textContent || "");
-        const isMenuText = menuLabelGroups.some((group) => group.some((label) => text === label || text.startsWith(`${label} `)));
+      showOutsideClickOverlay(panel);
 
-        if (isMenuText) {
-          element.style.setProperty("color", mobileMenuText, "important");
-          element.style.setProperty("font-weight", "700", "important");
-        }
+      Array.from(panel.querySelectorAll<HTMLElement>("a, button, [role='menuitem'], li, span")).forEach((element) => {
+        element.style.setProperty("color", mobileMenuText, "important");
+        element.style.setProperty("font-weight", "700", "important");
 
         if (hasSolidBackground(element)) {
           element.style.setProperty("background-color", mobileMenuBackground, "important");
@@ -924,21 +1054,24 @@ export default function PorownanieInwestycji() {
       });
     };
 
-    let closingMainMenuFromOutside = false;
+    const scheduleStyleUpdate = () => {
+      window.requestAnimationFrame(styleMobileMainMenuPanel);
+      window.setTimeout(styleMobileMainMenuPanel, 80);
+      window.setTimeout(styleMobileMainMenuPanel, 220);
+    };
 
-    const closeMobileMainMenu = () => {
-      const toggle = getMobileMenuToggle();
+    const rememberMobileMenuToggle = (event: MouseEvent | PointerEvent | TouchEvent) => {
+      if (!isMobileViewport()) return;
+
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      const toggle = target.closest<HTMLElement>("button, [role='button']");
       if (!toggle) return;
+      if (!getMobileMenuToggleCandidates().includes(toggle)) return;
 
-      closingMainMenuFromOutside = true;
-      window.setTimeout(() => {
-        toggle.click();
-
-        window.setTimeout(() => {
-          closingMainMenuFromOutside = false;
-          scheduleStyleUpdate();
-        }, 120);
-      }, 0);
+      lastMobileMenuToggle = toggle;
+      scheduleStyleUpdate();
     };
 
     const handleOutsideMainMenuClick = (event: MouseEvent | PointerEvent | TouchEvent) => {
@@ -961,29 +1094,33 @@ export default function PorownanieInwestycji() {
       closeMobileMainMenu();
     };
 
-    const scheduleStyleUpdate = () => {
-      window.requestAnimationFrame(styleMobileMainMenuPanel);
-      window.setTimeout(styleMobileMainMenuPanel, 80);
-    };
-
     scheduleStyleUpdate();
 
     const observer = new MutationObserver(scheduleStyleUpdate);
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "aria-expanded"] });
 
+    document.addEventListener("pointerdown", rememberMobileMenuToggle, true);
+    document.addEventListener("touchstart", rememberMobileMenuToggle, true);
+    document.addEventListener("click", rememberMobileMenuToggle, true);
     document.addEventListener("pointerdown", handleOutsideMainMenuClick, true);
     document.addEventListener("touchstart", handleOutsideMainMenuClick, true);
     document.addEventListener("click", handleOutsideMainMenuClick, true);
     document.addEventListener("click", scheduleStyleUpdate, true);
     window.addEventListener("resize", scheduleStyleUpdate);
+    window.addEventListener("scroll", scheduleStyleUpdate, true);
 
     return () => {
       observer.disconnect();
+      removeOutsideClickOverlay();
+      document.removeEventListener("pointerdown", rememberMobileMenuToggle, true);
+      document.removeEventListener("touchstart", rememberMobileMenuToggle, true);
+      document.removeEventListener("click", rememberMobileMenuToggle, true);
       document.removeEventListener("pointerdown", handleOutsideMainMenuClick, true);
       document.removeEventListener("touchstart", handleOutsideMainMenuClick, true);
       document.removeEventListener("click", handleOutsideMainMenuClick, true);
       document.removeEventListener("click", scheduleStyleUpdate, true);
       window.removeEventListener("resize", scheduleStyleUpdate);
+      window.removeEventListener("scroll", scheduleStyleUpdate, true);
     };
   }, []);
 
@@ -1398,44 +1535,66 @@ export default function PorownanieInwestycji() {
     hint: string,
     renderValue: (result: InvestmentResult) => string,
     riskType?: "breakEven" | "fixedCost" | "operatingMargin"
-  ) => (
-    <div className="mb-5">
-      <div className="mb-2 flex items-center gap-2 text-sm font-bold text-yellow-300">
-        {label}
-        <InfoHint text={hint} />
-      </div>
-      <div
-        className="grid grid-cols-1 gap-3 md:[grid-template-columns:var(--result-columns)]"
-        style={{ "--result-columns": `repeat(${results.length}, minmax(180px, 1fr))` } as React.CSSProperties}
-      >
-        {results.map((result) => {
-          const riskValue = riskType === "breakEven"
-            ? result.monthBreakEvenPercent
-            : riskType === "fixedCost"
-              ? result.fixedCostsToGrossProfitPercent
-              : riskType === "operatingMargin"
-                ? result.operatingMarginPercent
-                : null;
+  ) => {
+    const renderResultCard = (result: InvestmentResult) => {
+      const riskValue = riskType === "breakEven"
+        ? result.monthBreakEvenPercent
+        : riskType === "fixedCost"
+          ? result.fixedCostsToGrossProfitPercent
+          : riskType === "operatingMargin"
+            ? result.operatingMarginPercent
+            : null;
 
-          return (
-            <div key={`${result.id}-${label}`} className="flex flex-col gap-2">
-              <div className="md:hidden rounded-xl border border-green-500/25 bg-gray-900/30 px-3 py-2 text-sm font-bold text-[#cfe8c9]">
-                {result.name}
+      return (
+        <KpiValue
+          value={renderValue(result)}
+          className={
+            riskType && riskValue !== null
+              ? riskTone(riskValue, riskType)
+              : "border-yellow-600/30 bg-[#243424] text-yellow-400"
+          }
+        />
+      );
+    };
+
+    if (isMobileView) {
+      return (
+        <div className="mb-6">
+          <div className="mb-3 flex items-center gap-2 text-base font-bold text-yellow-300">
+            {label}
+            <InfoHint text={hint} />
+          </div>
+          <div className="flex flex-col gap-4">
+            {results.map((result) => (
+              <div key={`${result.id}-${label}`} className="flex flex-col gap-2">
+                <div className="rounded-xl border border-green-500/25 bg-gray-900/30 px-3 py-2 text-sm font-bold text-[#cfe8c9]">
+                  {result.name}
+                </div>
+                {renderResultCard(result)}
               </div>
-              <KpiValue
-                value={renderValue(result)}
-                className={
-                  riskType && riskValue !== null
-                    ? riskTone(riskValue, riskType)
-                    : "border-yellow-600/30 bg-[#243424] text-yellow-400"
-                }
-              />
-            </div>
-          );
-        })}
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="mb-5">
+        <div className="mb-2 flex items-center gap-2 text-sm font-bold text-yellow-300">
+          {label}
+          <InfoHint text={hint} />
+        </div>
+        <div
+          className="grid gap-3"
+          style={{ gridTemplateColumns: `repeat(${results.length}, minmax(180px, 1fr))` }}
+        >
+          {results.map((result) => (
+            <div key={`${result.id}-${label}`}>{renderResultCard(result)}</div>
+          ))}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
 
 
@@ -1446,15 +1605,6 @@ export default function PorownanieInwestycji() {
     valueType: "amount" | "percent" | "number"
   ) => {
     const isPaybackChart = dataKey === "paybackYear";
-    const isMobilePaybackChart = isPaybackChart && isMobileView;
-    const chartLayout = isPaybackChart && !isMobilePaybackChart ? "vertical" : "horizontal";
-    const chartMargin = {
-      top: 34,
-      right: isPaybackChart && !isMobilePaybackChart ? 90 : 16,
-      left: isPaybackChart && !isMobilePaybackChart ? 90 : 0,
-      bottom: isMobilePaybackChart ? 38 : 8,
-    };
-    const chartHeight = isPaybackChart && !isMobilePaybackChart ? 360 : 340;
     const chartData = isPaybackChart
       ? [...comparisonData].sort((a, b) => {
           const aValue = a.paybackYear || Number.POSITIVE_INFINITY;
@@ -1462,49 +1612,53 @@ export default function PorownanieInwestycji() {
           return aValue - bValue;
         })
       : comparisonData;
+    const chartHeight = isPaybackChart
+      ? Math.max(300, chartData.length * (isMobileView ? 76 : 62) + 96)
+      : 340;
+    const chartMargin = isPaybackChart
+      ? {
+          top: 34,
+          right: isMobileView ? 58 : 90,
+          left: isMobileView ? 4 : 90,
+          bottom: 8,
+        }
+      : { top: 34, right: 28, left: 0, bottom: 8 };
 
     return (
-      <Card className="rounded-2xl border border-yellow-600/30 bg-[#3c2a20] p-6">
+      <Card className="rounded-2xl border border-yellow-600/30 bg-[#3c2a20] p-4 md:p-6">
         <CardContent>
           <h3 className="mb-4 text-lg font-semibold text-yellow-300">{title}</h3>
           <ResponsiveContainer width="100%" height={chartHeight}>
             <BarChart
               data={chartData}
-              layout={chartLayout}
+              layout={isPaybackChart ? "vertical" : "horizontal"}
               margin={chartMargin}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#ffaa00" />
-              {isPaybackChart && !isMobilePaybackChart ? (
+              {isPaybackChart ? (
                 <>
                   <XAxis
                     type="number"
                     stroke="#fff"
                     tick={{ fill: "#fff", fontSize: 12 }}
+                    domain={[0, "dataMax + 1"]}
                     tickFormatter={(value) => String(Math.round(Number(value)))}
                   />
                   <YAxis
                     type="category"
                     dataKey="name"
                     stroke="#fff"
-                    tick={{ fill: "#fff", fontSize: 12 }}
-                    width={130}
+                    tick={{ fill: "#fff", fontSize: isMobileView ? 10 : 12 }}
+                    width={isMobileView ? 92 : 130}
+                    interval={0}
                   />
                 </>
               ) : (
                 <>
-                  <XAxis
-                    dataKey="name"
-                    stroke="#fff"
-                    tick={{ fill: "#fff", fontSize: isMobilePaybackChart ? 10 : 12 }}
-                    interval={0}
-                    angle={isMobilePaybackChart ? -20 : 0}
-                    textAnchor={isMobilePaybackChart ? "end" : "middle"}
-                    height={isMobilePaybackChart ? 58 : 30}
-                  />
+                  <XAxis dataKey="name" stroke="#fff" tick={{ fill: "#fff", fontSize: 12 }} />
                   <YAxis
                     stroke="#fff"
                     tick={{ fill: "#fff", fontSize: 12 }}
-                    domain={isMobilePaybackChart ? [0, "dataMax + 1"] : undefined}
                     tickFormatter={(value) =>
                       valueType === "percent"
                         ? `${Number(value).toFixed(0)}%`
@@ -1520,7 +1674,8 @@ export default function PorownanieInwestycji() {
                 dataKey={dataKey}
                 fill="#66ccff"
                 name={barName}
-                maxBarSize={56}
+                maxBarSize={isPaybackChart && isMobileView ? 34 : 56}
+                minPointSize={isPaybackChart ? 4 : 0}
                 legendType="circle"
               >
                 <LabelList
@@ -1528,7 +1683,7 @@ export default function PorownanieInwestycji() {
                 <CustomBarLabel
                 {...props}
                 type={valueType}
-                layout={isPaybackChart && !isMobilePaybackChart ? "vertical" : "horizontal"}
+                layout={isPaybackChart ? "vertical" : "horizontal"}
                 />
                  )}
                 />
@@ -1772,19 +1927,21 @@ export default function PorownanieInwestycji() {
 
                 <div className="overflow-x-auto">
                   <div className="min-w-0 md:min-w-[820px]">
-                    <div
-                      className="mb-5 hidden gap-3 md:grid md:[grid-template-columns:var(--result-columns)]"
-                      style={{ "--result-columns": `repeat(${results.length}, minmax(180px, 1fr))` } as React.CSSProperties}
-                    >
-                      {results.map((result) => (
-                        <div
-                          key={result.id}
-                          className="rounded-2xl border border-yellow-600/30 bg-gray-900/40 p-4 font-bold text-yellow-300"
-                        >
-                          {result.name}
-                        </div>
-                      ))}
-                    </div>
+                    {!isMobileView && (
+                      <div
+                        className="mb-5 grid gap-3"
+                        style={{ gridTemplateColumns: `repeat(${results.length}, minmax(180px, 1fr))` }}
+                      >
+                        {results.map((result) => (
+                          <div
+                            key={result.id}
+                            className="rounded-2xl border border-yellow-600/30 bg-gray-900/40 p-4 font-bold text-yellow-300"
+                          >
+                            {result.name}
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
                     {renderMetricRow(
                       "Zysk netto na koniec okresu",
