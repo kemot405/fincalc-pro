@@ -54,7 +54,7 @@ export async function GET() {
     riskThresholds: {
       monthBreakEvenPercent: {
         low: {
-          max: 50,
+          max: 60,
           label: "Niskie ryzyko",
           tone: "green",
         },
