@@ -67,12 +67,21 @@ type RiskThresholdConfig = {
   danger?: number | null;
   lowMax?: number | null;
   mediumMax?: number | null;
+  highMax?: number | null;
   goodMax?: number | null;
+  warningMax?: number | null;
+  warningMin?: number | null;
+  dangerMin?: number | null;
   greenMax?: number | null;
   yellowMax?: number | null;
+  redMin?: number | null;
   goodMin?: number | null;
   mediumMin?: number | null;
+  weakMax?: number | null;
   highMin?: number | null;
+  greenMin?: number | null;
+  yellowMin?: number | null;
+  redMax?: number | null;
   greenLimit?: number | null;
   yellowLimit?: number | null;
 };
@@ -162,23 +171,25 @@ type TaxDefaults = {
 
 type RiskThresholds = {
   monthBreakEvenPercent: {
-    lowMax: number;
-    mediumMax: number;
+    greenMax: number;
+    yellowMax: number;
   };
   operatingMarginPercent: {
-    goodMin: number;
-    mediumMin: number;
+    greenMin: number;
+    yellowMin: number;
   };
 };
 
 const DEFAULT_RISK_THRESHOLDS: RiskThresholds = {
   monthBreakEvenPercent: {
-    lowMax: 35,
-    mediumMax: 60,
+    // Niskie ryzyko: do 60%, średnie: 60-85%, wysokie: powyżej 85%.
+    greenMax: 60,
+    yellowMax: 85,
   },
   operatingMarginPercent: {
-    goodMin: 40,
-    mediumMin: 20,
+    // Dobrze: od 40%, średnio: 20-40%, słabo: poniżej 20%.
+    greenMin: 40,
+    yellowMin: 20,
   },
 };
 
@@ -404,53 +415,62 @@ function normalizeRiskThresholds(source?: DefaultsResponse["riskThresholds"]): R
   const breakEven = source?.monthBreakEvenPercent;
   const operatingMargin = source?.operatingMarginPercent;
 
-  const breakEvenLowMax =
+  const breakEvenGreenMax =
     firstFiniteNumber(
+      breakEven?.greenMax,
       breakEven?.lowMax,
       breakEven?.low,
       breakEven?.goodMax,
-      breakEven?.greenMax,
-      breakEven?.greenLimit
-    ) ?? DEFAULT_RISK_THRESHOLDS.monthBreakEvenPercent.lowMax;
+      breakEven?.greenLimit,
+      breakEven?.mediumMin,
+      breakEven?.warningMin
+    ) ?? DEFAULT_RISK_THRESHOLDS.monthBreakEvenPercent.greenMax;
 
-  const breakEvenMediumMax =
+  const breakEvenYellowMax =
     firstFiniteNumber(
+      breakEven?.yellowMax,
+      breakEven?.highMin,
+      breakEven?.dangerMin,
+      breakEven?.redMin,
+      breakEven?.high,
       breakEven?.mediumMax,
       breakEven?.medium,
-      breakEven?.yellowMax,
-      breakEven?.yellowLimit,
-      breakEven?.warning
-    ) ?? DEFAULT_RISK_THRESHOLDS.monthBreakEvenPercent.mediumMax;
+      breakEven?.warningMax,
+      breakEven?.yellowLimit
+    ) ?? DEFAULT_RISK_THRESHOLDS.monthBreakEvenPercent.yellowMax;
 
-  const operatingGoodMin =
+  const operatingGreenMin =
     firstFiniteNumber(
+      operatingMargin?.greenMin,
       operatingMargin?.goodMin,
       operatingMargin?.good,
       operatingMargin?.strong,
       operatingMargin?.high,
       operatingMargin?.highMin
-    ) ?? DEFAULT_RISK_THRESHOLDS.operatingMarginPercent.goodMin;
+    ) ?? DEFAULT_RISK_THRESHOLDS.operatingMarginPercent.greenMin;
 
-  const operatingMediumMin =
+  const operatingYellowMin =
     firstFiniteNumber(
+      operatingMargin?.yellowMin,
       operatingMargin?.mediumMin,
       operatingMargin?.medium,
-      operatingMargin?.low,
-      operatingMargin?.warning
-    ) ?? DEFAULT_RISK_THRESHOLDS.operatingMarginPercent.mediumMin;
+      operatingMargin?.warning,
+      operatingMargin?.weak,
+      operatingMargin?.weakMax,
+      operatingMargin?.low
+    ) ?? DEFAULT_RISK_THRESHOLDS.operatingMarginPercent.yellowMin;
 
   return {
     monthBreakEvenPercent: {
-      lowMax: breakEvenLowMax,
-      mediumMax: Math.max(breakEvenMediumMax, breakEvenLowMax),
+      greenMax: Math.min(breakEvenGreenMax, breakEvenYellowMax),
+      yellowMax: Math.max(breakEvenYellowMax, breakEvenGreenMax),
     },
     operatingMarginPercent: {
-      goodMin: Math.max(operatingGoodMin, operatingMediumMin),
-      mediumMin: Math.min(operatingMediumMin, operatingGoodMin),
+      greenMin: Math.max(operatingGreenMin, operatingYellowMin),
+      yellowMin: Math.min(operatingYellowMin, operatingGreenMin),
     },
   };
 }
-
 function getWorkingDaysForRisk(input: InvestmentInput): number {
   if (
     input.type === "shortTermRental" ||
@@ -471,20 +491,20 @@ function riskTone(
   type: "breakEven" | "fixedCost" | "operatingMargin",
   riskThresholds: RiskThresholds
 ) {
-  const neutralTone = "border-green-500/35 bg-green-900/45 text-gray-100";
-  const warningTone = "border-green-500/35 bg-green-900/45 text-yellow-300";
-  const dangerTone = "border-green-500/35 bg-green-900/45 text-red-300";
+  const goodTone = "border-green-500/35 bg-green-900/45 text-[#5DFF4A]";
+  const warningTone = "border-green-500/35 bg-green-900/45 text-[#FFD94A]";
+  const dangerTone = "border-green-500/35 bg-green-900/45 text-[#FF5A3D]";
 
   if (!Number.isFinite(value)) {
-    return neutralTone;
+    return goodTone;
   }
 
   if (type === "operatingMargin") {
-    if (value >= riskThresholds.operatingMarginPercent.goodMin) {
-      return neutralTone;
+    if (value >= riskThresholds.operatingMarginPercent.greenMin) {
+      return goodTone;
     }
 
-    if (value >= riskThresholds.operatingMarginPercent.mediumMin) {
+    if (value >= riskThresholds.operatingMarginPercent.yellowMin) {
       return warningTone;
     }
 
@@ -492,12 +512,12 @@ function riskTone(
   }
 
   const greenLimit =
-    type === "breakEven" ? riskThresholds.monthBreakEvenPercent.lowMax : 60;
+    type === "breakEven" ? riskThresholds.monthBreakEvenPercent.greenMax : 60;
   const yellowLimit =
-    type === "breakEven" ? riskThresholds.monthBreakEvenPercent.mediumMax : 90;
+    type === "breakEven" ? riskThresholds.monthBreakEvenPercent.yellowMax : 90;
 
   if (value <= greenLimit) {
-    return neutralTone;
+    return goodTone;
   }
 
   if (value <= yellowLimit) {
@@ -506,7 +526,6 @@ function riskTone(
 
   return dangerTone;
 }
-
 function CustomLineLabel({ x, y, value, index, dataLength, mode }: any) {
   if (value === null || value === undefined || !shouldShowLabel(index, dataLength)) return null;
 
