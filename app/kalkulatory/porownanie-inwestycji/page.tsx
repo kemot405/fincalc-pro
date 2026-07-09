@@ -56,6 +56,27 @@ type InflationForecastRow = {
   value: number;
 };
 
+type RiskThresholdConfig = {
+  low?: number | null;
+  medium?: number | null;
+  high?: number | null;
+  good?: number | null;
+  weak?: number | null;
+  strong?: number | null;
+  warning?: number | null;
+  danger?: number | null;
+  lowMax?: number | null;
+  mediumMax?: number | null;
+  goodMax?: number | null;
+  greenMax?: number | null;
+  yellowMax?: number | null;
+  goodMin?: number | null;
+  mediumMin?: number | null;
+  highMin?: number | null;
+  greenLimit?: number | null;
+  yellowLimit?: number | null;
+};
+
 type DefaultsResponse = {
   inflation?: {
     latest: number | null;
@@ -73,6 +94,10 @@ type DefaultsResponse = {
     linear?: number | null;
     businessDefault?: number | null;
     default?: number | null;
+  };
+  riskThresholds?: {
+    monthBreakEvenPercent?: RiskThresholdConfig | null;
+    operatingMarginPercent?: RiskThresholdConfig | null;
   };
 };
 
@@ -133,6 +158,28 @@ type TaxDefaults = {
   generalRulesHigh: number;
   generalRulesThreshold: number;
   linear: number;
+};
+
+type RiskThresholds = {
+  monthBreakEvenPercent: {
+    lowMax: number;
+    mediumMax: number;
+  };
+  operatingMarginPercent: {
+    goodMin: number;
+    mediumMin: number;
+  };
+};
+
+const DEFAULT_RISK_THRESHOLDS: RiskThresholds = {
+  monthBreakEvenPercent: {
+    lowMax: 35,
+    mediumMax: 60,
+  },
+  operatingMarginPercent: {
+    goodMin: 40,
+    mediumMin: 20,
+  },
 };
 
 const typeLabels: Record<InvestmentType, string> = {
@@ -343,6 +390,67 @@ function getAverageInflationFromForecast(years: number, fallback: number): numbe
   return sum / selected.length;
 }
 
+function firstFiniteNumber(...values: Array<number | null | undefined>): number | null {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function normalizeRiskThresholds(source?: DefaultsResponse["riskThresholds"]): RiskThresholds {
+  const breakEven = source?.monthBreakEvenPercent;
+  const operatingMargin = source?.operatingMarginPercent;
+
+  const breakEvenLowMax =
+    firstFiniteNumber(
+      breakEven?.lowMax,
+      breakEven?.low,
+      breakEven?.goodMax,
+      breakEven?.greenMax,
+      breakEven?.greenLimit
+    ) ?? DEFAULT_RISK_THRESHOLDS.monthBreakEvenPercent.lowMax;
+
+  const breakEvenMediumMax =
+    firstFiniteNumber(
+      breakEven?.mediumMax,
+      breakEven?.medium,
+      breakEven?.yellowMax,
+      breakEven?.yellowLimit,
+      breakEven?.warning
+    ) ?? DEFAULT_RISK_THRESHOLDS.monthBreakEvenPercent.mediumMax;
+
+  const operatingGoodMin =
+    firstFiniteNumber(
+      operatingMargin?.goodMin,
+      operatingMargin?.good,
+      operatingMargin?.strong,
+      operatingMargin?.high,
+      operatingMargin?.highMin
+    ) ?? DEFAULT_RISK_THRESHOLDS.operatingMarginPercent.goodMin;
+
+  const operatingMediumMin =
+    firstFiniteNumber(
+      operatingMargin?.mediumMin,
+      operatingMargin?.medium,
+      operatingMargin?.low,
+      operatingMargin?.warning
+    ) ?? DEFAULT_RISK_THRESHOLDS.operatingMarginPercent.mediumMin;
+
+  return {
+    monthBreakEvenPercent: {
+      lowMax: breakEvenLowMax,
+      mediumMax: Math.max(breakEvenMediumMax, breakEvenLowMax),
+    },
+    operatingMarginPercent: {
+      goodMin: Math.max(operatingGoodMin, operatingMediumMin),
+      mediumMin: Math.min(operatingMediumMin, operatingGoodMin),
+    },
+  };
+}
+
 function getWorkingDaysForRisk(input: InvestmentInput): number {
   if (
     input.type === "shortTermRental" ||
@@ -358,35 +466,45 @@ function getWorkingDaysForRisk(input: InvestmentInput): number {
 }
 
 
-function riskTone(value: number, type: "breakEven" | "fixedCost" | "operatingMargin") {
+function riskTone(
+  value: number,
+  type: "breakEven" | "fixedCost" | "operatingMargin",
+  riskThresholds: RiskThresholds
+) {
+  const neutralTone = "border-green-500/35 bg-green-900/45 text-gray-100";
+  const warningTone = "border-green-500/35 bg-green-900/45 text-yellow-300";
+  const dangerTone = "border-green-500/35 bg-green-900/45 text-red-300";
+
   if (!Number.isFinite(value)) {
-    return "border-green-500/35 bg-green-900/45 text-gray-100";
+    return neutralTone;
   }
 
   if (type === "operatingMargin") {
-    if (value >= 40) {
-      return "border-green-500/35 bg-green-900/45 text-green-100";
+    if (value >= riskThresholds.operatingMarginPercent.goodMin) {
+      return neutralTone;
     }
 
-    if (value >= 20) {
-      return "border-green-500/35 bg-green-900/45 text-yellow-300";
+    if (value >= riskThresholds.operatingMarginPercent.mediumMin) {
+      return warningTone;
     }
 
-    return "border-green-500/35 bg-green-900/45 text-red-300";
+    return dangerTone;
   }
 
-  const greenLimit = type === "breakEven" ? 35 : 60;
-  const yellowLimit = type === "breakEven" ? 60 : 90;
+  const greenLimit =
+    type === "breakEven" ? riskThresholds.monthBreakEvenPercent.lowMax : 60;
+  const yellowLimit =
+    type === "breakEven" ? riskThresholds.monthBreakEvenPercent.mediumMax : 90;
 
   if (value <= greenLimit) {
-    return "border-green-500/35 bg-green-900/45 text-green-100";
+    return neutralTone;
   }
 
   if (value <= yellowLimit) {
-    return "border-green-500/35 bg-green-900/45 text-yellow-300";
+    return warningTone;
   }
 
-  return "border-green-500/35 bg-green-900/45 text-red-300";
+  return dangerTone;
 }
 
 function CustomLineLabel({ x, y, value, index, dataLength, mode }: any) {
@@ -732,6 +850,7 @@ export default function PorownanieInwestycji() {
     generalRulesThreshold: 120000,
     linear: 19,
   });
+  const [riskThresholds, setRiskThresholds] = useState<RiskThresholds>(DEFAULT_RISK_THRESHOLDS);
 
   const [investments, setInvestments] = useState<InvestmentInput[]>([
     createDefaultInvestment(1, "dailyServices"),
@@ -790,6 +909,7 @@ export default function PorownanieInwestycji() {
           generalRulesThreshold: json.tax?.generalRulesThreshold ?? 120000,
           linear: json.tax?.linear ?? json.tax?.businessDefault ?? 19,
         });
+        setRiskThresholds(normalizeRiskThresholds(json.riskThresholds));
       } catch (error) {
         console.error("Nie udało się pobrać danych domyślnych:", error);
       }
@@ -1193,7 +1313,7 @@ export default function PorownanieInwestycji() {
           value={renderValue(result)}
           className={
             riskType && riskValue !== null
-              ? riskTone(riskValue, riskType)
+              ? riskTone(riskValue, riskType, riskThresholds)
               : "border-yellow-600/30 bg-[#243424] text-yellow-400"
           }
         />
