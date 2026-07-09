@@ -56,15 +56,28 @@ type InflationForecastRow = {
   value: number;
 };
 
+type RiskToneName = "green" | "yellow" | "red";
+
+type RiskThresholdLevel = {
+  min?: number | null;
+  max?: number | null;
+  minExclusive?: number | null;
+  maxExclusive?: number | null;
+  label?: string | null;
+  tone?: RiskToneName | string | null;
+};
+
+type RiskThresholdValue = number | RiskThresholdLevel | null | undefined;
+
 type RiskThresholdConfig = {
-  low?: number | null;
-  medium?: number | null;
-  high?: number | null;
-  good?: number | null;
-  weak?: number | null;
-  strong?: number | null;
-  warning?: number | null;
-  danger?: number | null;
+  low?: RiskThresholdValue;
+  medium?: RiskThresholdValue;
+  high?: RiskThresholdValue;
+  good?: RiskThresholdValue;
+  weak?: RiskThresholdValue;
+  strong?: RiskThresholdValue;
+  warning?: RiskThresholdValue;
+  danger?: RiskThresholdValue;
   lowMax?: number | null;
   mediumMax?: number | null;
   highMax?: number | null;
@@ -169,27 +182,57 @@ type TaxDefaults = {
   linear: number;
 };
 
+type RiskRange = {
+  min?: number;
+  max?: number;
+  minExclusive?: number;
+  maxExclusive?: number;
+  tone: RiskToneName;
+};
+
 type RiskThresholds = {
   monthBreakEvenPercent: {
-    greenMax: number;
-    yellowMax: number;
+    low: RiskRange;
+    medium: RiskRange;
+    high: RiskRange;
   };
   operatingMarginPercent: {
-    greenMin: number;
-    yellowMin: number;
+    good: RiskRange;
+    medium: RiskRange;
+    weak: RiskRange;
   };
 };
 
 const DEFAULT_RISK_THRESHOLDS: RiskThresholds = {
   monthBreakEvenPercent: {
-    // Niskie ryzyko: do 60%, średnie: 60-85%, wysokie: powyżej 85%.
-    greenMax: 60,
-    yellowMax: 85,
+    low: {
+      max: 50,
+      tone: "green",
+    },
+    medium: {
+      minExclusive: 60,
+      max: 85,
+      tone: "yellow",
+    },
+    high: {
+      minExclusive: 85,
+      tone: "red",
+    },
   },
   operatingMarginPercent: {
-    // Dobrze: od 40%, średnio: 20-40%, słabo: poniżej 20%.
-    greenMin: 40,
-    yellowMin: 20,
+    good: {
+      min: 20,
+      tone: "green",
+    },
+    medium: {
+      min: 15,
+      maxExclusive: 20,
+      tone: "yellow",
+    },
+    weak: {
+      maxExclusive: 15,
+      tone: "red",
+    },
   },
 };
 
@@ -411,66 +454,171 @@ function firstFiniteNumber(...values: Array<number | null | undefined>): number 
   return null;
 }
 
+function normalizeRiskTone(value: unknown, fallback: RiskToneName): RiskToneName {
+  return value === "green" || value === "yellow" || value === "red" ? value : fallback;
+}
+
+function thresholdLevelNumber(
+  value: RiskThresholdValue,
+  ...keys: Array<keyof RiskThresholdLevel>
+): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+
+  for (const key of keys) {
+    const nestedValue = value[key];
+    if (typeof nestedValue === "number" && Number.isFinite(nestedValue)) {
+      return nestedValue;
+    }
+  }
+
+  return null;
+}
+
+function thresholdLevelTone(value: RiskThresholdValue, fallback: RiskToneName): RiskToneName {
+  if (typeof value !== "object" || value === null) {
+    return fallback;
+  }
+
+  return normalizeRiskTone(value.tone, fallback);
+}
+
+function matchesRiskRange(value: number, range: RiskRange): boolean {
+  if (range.min !== undefined && value < range.min) return false;
+  if (range.minExclusive !== undefined && value <= range.minExclusive) return false;
+  if (range.max !== undefined && value > range.max) return false;
+  if (range.maxExclusive !== undefined && value >= range.maxExclusive) return false;
+  return true;
+}
+
 function normalizeRiskThresholds(source?: DefaultsResponse["riskThresholds"]): RiskThresholds {
   const breakEven = source?.monthBreakEvenPercent;
   const operatingMargin = source?.operatingMarginPercent;
 
-  const breakEvenGreenMax =
-    firstFiniteNumber(
-      breakEven?.greenMax,
-      breakEven?.lowMax,
-      breakEven?.low,
-      breakEven?.goodMax,
-      breakEven?.greenLimit,
-      breakEven?.mediumMin,
-      breakEven?.warningMin
-    ) ?? DEFAULT_RISK_THRESHOLDS.monthBreakEvenPercent.greenMax;
-
-  const breakEvenYellowMax =
-    firstFiniteNumber(
-      breakEven?.yellowMax,
-      breakEven?.highMin,
-      breakEven?.dangerMin,
-      breakEven?.redMin,
-      breakEven?.high,
-      breakEven?.mediumMax,
-      breakEven?.medium,
-      breakEven?.warningMax,
-      breakEven?.yellowLimit
-    ) ?? DEFAULT_RISK_THRESHOLDS.monthBreakEvenPercent.yellowMax;
-
-  const operatingGreenMin =
-    firstFiniteNumber(
-      operatingMargin?.greenMin,
-      operatingMargin?.goodMin,
-      operatingMargin?.good,
-      operatingMargin?.strong,
-      operatingMargin?.high,
-      operatingMargin?.highMin
-    ) ?? DEFAULT_RISK_THRESHOLDS.operatingMarginPercent.greenMin;
-
-  const operatingYellowMin =
-    firstFiniteNumber(
-      operatingMargin?.yellowMin,
-      operatingMargin?.mediumMin,
-      operatingMargin?.medium,
-      operatingMargin?.warning,
-      operatingMargin?.weak,
-      operatingMargin?.weakMax,
-      operatingMargin?.low
-    ) ?? DEFAULT_RISK_THRESHOLDS.operatingMarginPercent.yellowMin;
-
   return {
     monthBreakEvenPercent: {
-      greenMax: Math.min(breakEvenGreenMax, breakEvenYellowMax),
-      yellowMax: Math.max(breakEvenYellowMax, breakEvenGreenMax),
+      low: {
+        max:
+          firstFiniteNumber(
+            thresholdLevelNumber(breakEven?.low, "max", "maxExclusive"),
+            breakEven?.greenMax,
+            breakEven?.lowMax,
+            breakEven?.greenLimit,
+            thresholdLevelNumber(breakEven?.good, "max", "maxExclusive"),
+            thresholdLevelNumber(breakEven?.strong, "max", "maxExclusive")
+          ) ?? DEFAULT_RISK_THRESHOLDS.monthBreakEvenPercent.low.max,
+        tone: thresholdLevelTone(breakEven?.low, DEFAULT_RISK_THRESHOLDS.monthBreakEvenPercent.low.tone),
+      },
+      medium: {
+        min:
+          firstFiniteNumber(
+            thresholdLevelNumber(breakEven?.medium, "min"),
+            thresholdLevelNumber(breakEven?.warning, "min"),
+            breakEven?.mediumMin,
+            breakEven?.warningMin
+          ) ?? DEFAULT_RISK_THRESHOLDS.monthBreakEvenPercent.medium.min,
+        minExclusive:
+          firstFiniteNumber(
+            thresholdLevelNumber(breakEven?.medium, "minExclusive"),
+            thresholdLevelNumber(breakEven?.warning, "minExclusive")
+          ) ?? DEFAULT_RISK_THRESHOLDS.monthBreakEvenPercent.medium.minExclusive,
+        max:
+          firstFiniteNumber(
+            thresholdLevelNumber(breakEven?.medium, "max"),
+            thresholdLevelNumber(breakEven?.warning, "max"),
+            breakEven?.yellowMax,
+            breakEven?.mediumMax,
+            breakEven?.warningMax,
+            breakEven?.yellowLimit
+          ) ?? DEFAULT_RISK_THRESHOLDS.monthBreakEvenPercent.medium.max,
+        maxExclusive:
+          firstFiniteNumber(
+            thresholdLevelNumber(breakEven?.medium, "maxExclusive"),
+            thresholdLevelNumber(breakEven?.warning, "maxExclusive")
+          ) ?? DEFAULT_RISK_THRESHOLDS.monthBreakEvenPercent.medium.maxExclusive,
+        tone: thresholdLevelTone(breakEven?.medium, DEFAULT_RISK_THRESHOLDS.monthBreakEvenPercent.medium.tone),
+      },
+      high: {
+        min:
+          firstFiniteNumber(
+            thresholdLevelNumber(breakEven?.high, "min"),
+            thresholdLevelNumber(breakEven?.danger, "min"),
+            breakEven?.highMin,
+            breakEven?.dangerMin,
+            breakEven?.redMin
+          ) ?? DEFAULT_RISK_THRESHOLDS.monthBreakEvenPercent.high.min,
+        minExclusive:
+          firstFiniteNumber(
+            thresholdLevelNumber(breakEven?.high, "minExclusive"),
+            thresholdLevelNumber(breakEven?.danger, "minExclusive")
+          ) ?? DEFAULT_RISK_THRESHOLDS.monthBreakEvenPercent.high.minExclusive,
+        tone: thresholdLevelTone(breakEven?.high, DEFAULT_RISK_THRESHOLDS.monthBreakEvenPercent.high.tone),
+      },
     },
     operatingMarginPercent: {
-      greenMin: Math.max(operatingGreenMin, operatingYellowMin),
-      yellowMin: Math.min(operatingYellowMin, operatingGreenMin),
+      good: {
+        min:
+          firstFiniteNumber(
+            thresholdLevelNumber(operatingMargin?.good, "min"),
+            thresholdLevelNumber(operatingMargin?.strong, "min"),
+            operatingMargin?.greenMin,
+            operatingMargin?.goodMin,
+            operatingMargin?.highMin,
+            thresholdLevelNumber(operatingMargin?.high, "min")
+          ) ?? DEFAULT_RISK_THRESHOLDS.operatingMarginPercent.good.min,
+        tone: thresholdLevelTone(operatingMargin?.good, DEFAULT_RISK_THRESHOLDS.operatingMarginPercent.good.tone),
+      },
+      medium: {
+        min:
+          firstFiniteNumber(
+            thresholdLevelNumber(operatingMargin?.medium, "min"),
+            thresholdLevelNumber(operatingMargin?.warning, "min"),
+            operatingMargin?.yellowMin,
+            operatingMargin?.mediumMin
+          ) ?? DEFAULT_RISK_THRESHOLDS.operatingMarginPercent.medium.min,
+        minExclusive:
+          firstFiniteNumber(
+            thresholdLevelNumber(operatingMargin?.medium, "minExclusive"),
+            thresholdLevelNumber(operatingMargin?.warning, "minExclusive")
+          ) ?? DEFAULT_RISK_THRESHOLDS.operatingMarginPercent.medium.minExclusive,
+        max:
+          firstFiniteNumber(
+            thresholdLevelNumber(operatingMargin?.medium, "max"),
+            thresholdLevelNumber(operatingMargin?.warning, "max"),
+            operatingMargin?.yellowMax,
+            operatingMargin?.mediumMax
+          ) ?? DEFAULT_RISK_THRESHOLDS.operatingMarginPercent.medium.max,
+        maxExclusive:
+          firstFiniteNumber(
+            thresholdLevelNumber(operatingMargin?.medium, "maxExclusive"),
+            thresholdLevelNumber(operatingMargin?.warning, "maxExclusive")
+          ) ?? DEFAULT_RISK_THRESHOLDS.operatingMarginPercent.medium.maxExclusive,
+        tone: thresholdLevelTone(operatingMargin?.medium, DEFAULT_RISK_THRESHOLDS.operatingMarginPercent.medium.tone),
+      },
+      weak: {
+        max:
+          firstFiniteNumber(
+            thresholdLevelNumber(operatingMargin?.weak, "max"),
+            thresholdLevelNumber(operatingMargin?.danger, "max"),
+            operatingMargin?.redMax,
+            operatingMargin?.weakMax
+          ) ?? DEFAULT_RISK_THRESHOLDS.operatingMarginPercent.weak.max,
+        maxExclusive:
+          firstFiniteNumber(
+            thresholdLevelNumber(operatingMargin?.weak, "maxExclusive"),
+            thresholdLevelNumber(operatingMargin?.danger, "maxExclusive")
+          ) ?? DEFAULT_RISK_THRESHOLDS.operatingMarginPercent.weak.maxExclusive,
+        tone: thresholdLevelTone(operatingMargin?.weak, DEFAULT_RISK_THRESHOLDS.operatingMarginPercent.weak.tone),
+      },
     },
   };
 }
+
 function getWorkingDaysForRisk(input: InvestmentInput): number {
   if (
     input.type === "shortTermRental" ||
@@ -486,45 +634,74 @@ function getWorkingDaysForRisk(input: InvestmentInput): number {
 }
 
 
+function riskToneClass(tone: RiskToneName) {
+  const toneClasses: Record<RiskToneName, string> = {
+    green: "border-green-500/35 bg-green-900/45 text-[#5DFF4A]",
+    yellow: "border-green-500/35 bg-green-900/45 text-[#FFD94A]",
+    red: "border-green-500/35 bg-green-900/45 text-[#FF5A3D]",
+  };
+
+  return toneClasses[tone];
+}
+
 function riskTone(
   value: number,
   type: "breakEven" | "fixedCost" | "operatingMargin",
   riskThresholds: RiskThresholds
 ) {
-  const goodTone = "border-green-500/35 bg-green-900/45 text-[#5DFF4A]";
-  const warningTone = "border-green-500/35 bg-green-900/45 text-[#FFD94A]";
-  const dangerTone = "border-green-500/35 bg-green-900/45 text-[#FF5A3D]";
-
   if (!Number.isFinite(value)) {
-    return goodTone;
+    return riskToneClass("green");
   }
 
   if (type === "operatingMargin") {
-    if (value >= riskThresholds.operatingMarginPercent.greenMin) {
-      return goodTone;
+    const thresholds = riskThresholds.operatingMarginPercent;
+
+    if (matchesRiskRange(value, thresholds.good)) {
+      return riskToneClass(thresholds.good.tone);
     }
 
-    if (value >= riskThresholds.operatingMarginPercent.yellowMin) {
-      return warningTone;
+    if (matchesRiskRange(value, thresholds.medium)) {
+      return riskToneClass(thresholds.medium.tone);
     }
 
-    return dangerTone;
+    if (matchesRiskRange(value, thresholds.weak)) {
+      return riskToneClass(thresholds.weak.tone);
+    }
+
+    const goodMin = thresholds.good.min ?? 20;
+    const mediumMin = thresholds.medium.min ?? thresholds.medium.minExclusive ?? 15;
+
+    if (value >= goodMin) return riskToneClass(thresholds.good.tone);
+    if (value >= mediumMin) return riskToneClass(thresholds.medium.tone);
+    return riskToneClass(thresholds.weak.tone);
   }
 
-  const greenLimit =
-    type === "breakEven" ? riskThresholds.monthBreakEvenPercent.greenMax : 60;
-  const yellowLimit =
-    type === "breakEven" ? riskThresholds.monthBreakEvenPercent.yellowMax : 90;
+  const thresholds = riskThresholds.monthBreakEvenPercent;
 
-  if (value <= greenLimit) {
-    return goodTone;
+  if (type === "breakEven") {
+    if (matchesRiskRange(value, thresholds.low)) {
+      return riskToneClass(thresholds.low.tone);
+    }
+
+    if (matchesRiskRange(value, thresholds.medium)) {
+      return riskToneClass(thresholds.medium.tone);
+    }
+
+    if (matchesRiskRange(value, thresholds.high)) {
+      return riskToneClass(thresholds.high.tone);
+    }
+
+    const lowMax = thresholds.low.max ?? thresholds.low.maxExclusive ?? 50;
+    const mediumMax = thresholds.medium.max ?? thresholds.medium.maxExclusive ?? 85;
+
+    if (value <= lowMax) return riskToneClass(thresholds.low.tone);
+    if (value <= mediumMax) return riskToneClass(thresholds.medium.tone);
+    return riskToneClass(thresholds.high.tone);
   }
 
-  if (value <= yellowLimit) {
-    return warningTone;
-  }
-
-  return dangerTone;
+  if (value <= 60) return riskToneClass("green");
+  if (value <= 90) return riskToneClass("yellow");
+  return riskToneClass("red");
 }
 function CustomLineLabel({ x, y, value, index, dataLength, mode }: any) {
   if (value === null || value === undefined || !shouldShowLabel(index, dataLength)) return null;
